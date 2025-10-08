@@ -17,6 +17,7 @@ var itemsAddedToCart = 0;
 var maxItemsToAdd = 1; // Only one item per purchase
 var purchaseInProgress = false;
 var lastActionTime = 0;
+var debugBoxVisible = true; // Track debug box visibility
 
 // Debug box functionality
 function createDebugBox() {
@@ -29,7 +30,7 @@ function createDebugBox() {
     width: 350px;
     height: 300px;
     background: rgba(0, 0, 0, 0.9);
-    color: #00ccff;
+    color: #00ff00;
     font-family: 'Courier New', monospace;
     font-size: 12px;
     padding: 10px;
@@ -112,6 +113,16 @@ function makeDraggable(element, handle) {
     initialX = currentX;
     initialY = currentY;
     isDragging = false;
+  }
+}
+
+// Toggle debug box visibility
+function toggleDebugBox() {
+  const debugBox = document.getElementById("extension-debug-box");
+  if (debugBox) {
+    debugBoxVisible = !debugBoxVisible;
+    debugBox.style.display = debugBoxVisible ? "block" : "none";
+    console.log(`%c[AuraDrainer] Debug box ${debugBoxVisible ? 'shown' : 'hidden'}`, "color: #00ff00;");
   }
 }
 
@@ -409,11 +420,13 @@ function main() {
   debugLog(`🛒 Purchase Mode: Single Item Per Transaction`, "info");
   debugLog(`🔧 Debug Mode: Enabled`, "info");
   debugLog(`⚡ Force Stop: Alt+Shift+E`, "info");
+  debugLog(`👁️ Toggle Debug: Ctrl+Alt+D`, "info");
   debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info");
   
   const mainInterval = setInterval(mainLoop, 5000);
   
   window.addEventListener("keydown", (event) => {
+    // Emergency stop shortcut
     if (event.altKey && event.shiftKey && event.key === "E") {
       if (config.forceStop) {
         debugLog("🛑 EMERGENCY STOP ACTIVATED (Alt+Shift+E)", "error");
@@ -421,6 +434,12 @@ function main() {
         clearInterval(mainInterval);
         debugLog("✅ Extension stopped successfully", "success");
       }
+    }
+    
+    // Debug toggle shortcut
+    if (event.ctrlKey && event.altKey && event.key === "D") {
+      event.preventDefault(); // Prevent browser default behavior
+      toggleDebugBox();
     }
   });
 }
