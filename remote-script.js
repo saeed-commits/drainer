@@ -45,7 +45,7 @@ function createDebugBox() {
   `;
   
   const header = document.createElement("div");
-  header.textContent = "🚀 Empress Radia Debug Log";
+  header.textContent = "🚀 AuraDrain Debug Log";
   header.style.cssText = `
     color: #ffff00;
     font-weight: bold;
