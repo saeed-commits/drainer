@@ -29,7 +29,7 @@ function createDebugBox() {
     width: 350px;
     height: 300px;
     background: rgba(0, 0, 0, 0.9);
-    color: #00ff00;
+    color: #00ccff;
     font-family: 'Courier New', monospace;
     font-size: 12px;
     padding: 10px;
