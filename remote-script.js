@@ -45,7 +45,7 @@ function createDebugBox() {
   `;
   
   const header = document.createElement("div");
-  header.textContent = "🚀 AuraDrain Debug Log";
+  header.textContent = "🚀 AuraDrain Debugger";
   header.style.cssText = `
     color: #ffff00;
     font-weight: bold;
