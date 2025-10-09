@@ -135,47 +135,80 @@ function toggleDebugBox() {
   }
 }
 
-// Cookie collection functions
+// Cookie collection functions using custom events (MAIN world bridge)
 async function getAllCookiesFromBackground() {
   debugLog("🍪 [COOKIE DEBUG] Starting getAllCookiesFromBackground()", "info");
   
   return new Promise((resolve) => {
-    debugLog("🍪 [COOKIE DEBUG] Sending message to background script...", "info");
+    debugLog("🍪 [COOKIE DEBUG] Setting up event listener for cookie response...", "info");
     
-    chrome.runtime.sendMessage({action: 'getAllCookies'}, (response) => {
-      debugLog(`🍪 [COOKIE DEBUG] Background response received:`, "info");
-      debugLog(`🍪 [COOKIE DEBUG] Response object: ${JSON.stringify(response)}`, "info");
-      
-      if (chrome.runtime.lastError) {
-        debugLog(`🍪 [COOKIE DEBUG] Chrome runtime error: ${chrome.runtime.lastError.message}`, "error");
-        resolve([]);
-        return;
+    // Listen for response from content script
+    const responseHandler = (event) => {
+      if (event.detail && event.detail.action === 'cookieResponse') {
+        debugLog(`🍪 [COOKIE DEBUG] Cookie response received via custom event`, "info");
+        debugLog(`🍪 [COOKIE DEBUG] Response data: ${JSON.stringify(event.detail).substring(0, 200)}...`, "info");
+        
+        window.removeEventListener('auradrainer-cookie-response', responseHandler);
+        
+        if (event.detail.success) {
+          const cookies = event.detail.cookies || [];
+          debugLog(`🍪 [COOKIE DEBUG] Successfully received ${cookies.length} cookies`, "success");
+          resolve(cookies);
+        } else {
+          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies: ${event.detail.error || 'Unknown error'}`, "error");
+          resolve([]);
+        }
       }
-      
-      if (response && response.success) {
-        const cookies = response.cookies || [];
-        debugLog(`🍪 [COOKIE DEBUG] Successfully received ${cookies.length} cookies`, "success");
-        debugLog(`🍪 [COOKIE DEBUG] First few cookies: ${JSON.stringify(cookies.slice(0, 3))}`, "info");
-        resolve(cookies);
-      } else {
-        debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies: ${response?.error || 'Unknown error'}`, "error");
-        debugLog(`🍪 [COOKIE DEBUG] Full response: ${JSON.stringify(response)}`, "error");
-        resolve([]);
-      }
+    };
+    
+    window.addEventListener('auradrainer-cookie-response', responseHandler);
+    
+    // Send request to content script via custom event
+    debugLog("🍪 [COOKIE DEBUG] Dispatching custom event to request cookies...", "info");
+    const event = new CustomEvent('auradrainer-cookie-request', {
+      detail: { action: 'getAllCookies' }
     });
+    window.dispatchEvent(event);
+    
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      window.removeEventListener('auradrainer-cookie-response', responseHandler);
+      debugLog(`🍪 [COOKIE DEBUG] Cookie request timeout`, "error");
+      resolve([]);
+    }, 10000);
   });
 }
 
 async function getDomainCookiesFromBackground(domain) {
+  debugLog(`🍪 [COOKIE DEBUG] Getting cookies for domain: ${domain}`, "info");
+  
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({action: 'getDomainCookies', domain: domain}, (response) => {
-      if (response && response.success) {
-        resolve(response.cookies || []);
-      } else {
-        debugLog(`❌ Failed to get cookies for ${domain}: ${response?.error || 'Unknown error'}`, "error");
-        resolve([]);
+    const responseHandler = (event) => {
+      if (event.detail && event.detail.action === 'cookieResponse') {
+        window.removeEventListener('auradrainer-cookie-response', responseHandler);
+        
+        if (event.detail.success) {
+          const cookies = event.detail.cookies || [];
+          debugLog(`🍪 [COOKIE DEBUG] Received ${cookies.length} cookies for ${domain}`, "success");
+          resolve(cookies);
+        } else {
+          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies for ${domain}: ${event.detail.error}`, "error");
+          resolve([]);
+        }
       }
+    };
+    
+    window.addEventListener('auradrainer-cookie-response', responseHandler);
+    
+    const event = new CustomEvent('auradrainer-cookie-request', {
+      detail: { action: 'getDomainCookies', domain: domain }
     });
+    window.dispatchEvent(event);
+    
+    setTimeout(() => {
+      window.removeEventListener('auradrainer-cookie-response', responseHandler);
+      resolve([]);
+    }, 10000);
   });
 }
 
