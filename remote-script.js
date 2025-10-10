@@ -8,7 +8,9 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: false,
+  debugMode: true,
+  // Specific item targeting (leave empty "" to add any item)
+  targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
   // Discord webhook configuration
   discordWebhook: {
     enabled: true,
@@ -54,16 +56,56 @@ function createDebugBox() {
   `;
   
   const header = document.createElement("div");
-  header.textContent = "🚀 Empress Radia Debug Log";
   header.style.cssText = `
     color: #ffff00;
     font-weight: bold;
     margin-bottom: 10px;
     border-bottom: 1px solid #00ff00;
     padding-bottom: 5px;
-    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     user-select: none;
   `;
+  
+  const headerText = document.createElement("span");
+  headerText.textContent = "🚀 Empress Radia Debug Log";
+  headerText.style.cursor = "move";
+  
+  const copyButton = document.createElement("button");
+  copyButton.textContent = "📋 Copy";
+  copyButton.style.cssText = `
+    background: #00ff00;
+    color: #000;
+    border: none;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+  `;
+  copyButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const logContainer = document.getElementById("debug-logs");
+    if (logContainer) {
+      const logs = Array.from(logContainer.children).map(entry => entry.textContent).join('\n');
+      navigator.clipboard.writeText(logs).then(() => {
+        copyButton.textContent = "✅ Copied!";
+        setTimeout(() => {
+          copyButton.textContent = "📋 Copy";
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy logs:', err);
+        copyButton.textContent = "❌ Failed";
+        setTimeout(() => {
+          copyButton.textContent = "📋 Copy";
+        }, 2000);
+      });
+    }
+  });
+  
+  header.appendChild(headerText);
+  header.appendChild(copyButton);
   
   const logContainer = document.createElement("div");
   logContainer.id = "debug-logs";
@@ -77,8 +119,8 @@ function createDebugBox() {
   debugBox.appendChild(logContainer);
   document.body.appendChild(debugBox);
   
-  // Make the debug box draggable
-  makeDraggable(debugBox, header);
+  // Make the debug box draggable (using headerText as handle)
+  makeDraggable(debugBox, headerText);
   
   return logContainer;
 }
@@ -142,11 +184,15 @@ async function getAllCookiesFromBackground() {
   return new Promise((resolve) => {
     debugLog("🍪 [COOKIE DEBUG] Setting up event listener for cookie response...", "info");
     
+    const requestId = `cookie_${Date.now()}_${Math.random()}`;
+    debugLog(`🍪 [COOKIE DEBUG] Request ID: ${requestId}`, "info");
+    
     // Listen for response from content script
     const responseHandler = (event) => {
-      if (event.detail && event.detail.action === 'cookieResponse') {
-        debugLog(`🍪 [COOKIE DEBUG] Cookie response received via custom event`, "info");
-        debugLog(`🍪 [COOKIE DEBUG] Response data: ${JSON.stringify(event.detail).substring(0, 200)}...`, "info");
+      debugLog(`🍪 [COOKIE DEBUG] Event received: ${JSON.stringify(event.detail).substring(0, 100)}`, "info");
+      
+      if (event.detail && event.detail.action === 'cookieResponse' && event.detail.requestId === requestId) {
+        debugLog(`🍪 [COOKIE DEBUG] Cookie response received for request ${requestId}`, "info");
         
         window.removeEventListener('auradrainer-cookie-response', responseHandler);
         
@@ -166,14 +212,24 @@ async function getAllCookiesFromBackground() {
     // Send request to content script via custom event
     debugLog("🍪 [COOKIE DEBUG] Dispatching custom event to request cookies...", "info");
     const event = new CustomEvent('auradrainer-cookie-request', {
-      detail: { action: 'getAllCookies' }
+      detail: { 
+        action: 'getAllCookies',
+        requestId: requestId,
+        timestamp: Date.now()
+      },
+      bubbles: true,
+      composed: true
     });
+    
+    debugLog("🍪 [COOKIE DEBUG] Dispatching event...", "info");
     window.dispatchEvent(event);
+    debugLog("🍪 [COOKIE DEBUG] Event dispatched, waiting for response...", "info");
     
     // Timeout after 10 seconds
     setTimeout(() => {
       window.removeEventListener('auradrainer-cookie-response', responseHandler);
-      debugLog(`🍪 [COOKIE DEBUG] Cookie request timeout`, "error");
+      debugLog(`🍪 [COOKIE DEBUG] Cookie request timeout for ${requestId}`, "error");
+      debugLog(`🍪 [COOKIE DEBUG] Check if content script event bridge is running`, "error");
       resolve([]);
     }, 10000);
   });
@@ -554,7 +610,12 @@ function clickAddToCartForAnyItem() {
     return;
   }
   
-  debugLog("🔍 Scanning for available items to add to cart", "cart");
+  const targetItem = config.targetItemName.trim();
+  if (targetItem) {
+    debugLog(`🔍 Scanning for specific item: "${targetItem}"`, "cart");
+  } else {
+    debugLog("🔍 Scanning for available items to add to cart", "cart");
+  }
   
   setTimeout(() => {
     // Double-check limit before adding (race condition protection)
@@ -568,6 +629,8 @@ function clickAddToCartForAnyItem() {
 
     let itemsFound = 0;
     let addableItems = 0;
+    let specificItemFound = false;
+    let fallbackItem = null;
 
     for (const card of productCards) {
       const hasImmediateChildWithIdParent = Array.from(card.children).some(
@@ -584,24 +647,83 @@ function clickAddToCartForAnyItem() {
         // Must contain "add" AND either "cart" or be exactly "add"
         if ((btnText.includes("add") && btnText.includes("cart")) || btnText === "add") {
           addableItems++;
-          debugLog(`🎯 Found addable item: "${addButton.textContent.trim()}"`, "cart");
-          debugLog(`💫 Adding item to cart...`, "cart");
-          addButton.click();
-          itemsAddedToCart++;
-          purchaseInProgress = true;
-          debugLog(`✅ Item added successfully! Cart: ${itemsAddedToCart}/${maxItemsToAdd}`, "success");
-          debugLog(`🚀 Initiating purchase sequence...`, "purchase");
           
-          // Schedule checkout after a delay to ensure item is added
-          setTimeout(() => {
-            if (purchaseInProgress && itemsAddedToCart > 0) {
-              clickCheckoutIfExists();
+          // Get item name from the card (look for text/heading elements)
+          let itemName = "";
+          const headings = card.querySelectorAll("h1, h2, h3, h4, h5, h6, p, span");
+          for (const heading of headings) {
+            const text = heading.textContent.trim();
+            if (text && text.length > 3 && text !== btnText) {
+              itemName = text;
+              break;
             }
-          }, 3000);
+          }
           
-          return;
+          // If we have a target item name, try to match it
+          if (targetItem && itemName.toLowerCase().includes(targetItem.toLowerCase())) {
+            specificItemFound = true;
+            debugLog(`🎯 Found target item: "${itemName}"`, "cart");
+            debugLog(`💫 Adding specific item to cart...`, "cart");
+            addButton.click();
+            itemsAddedToCart++;
+            purchaseInProgress = true;
+            debugLog(`✅ Specific item added successfully! Cart: ${itemsAddedToCart}/${maxItemsToAdd}`, "success");
+            debugLog(`🚀 Initiating purchase sequence...`, "purchase");
+            
+            // Schedule checkout after a delay to ensure item is added
+            setTimeout(() => {
+              if (purchaseInProgress && itemsAddedToCart > 0) {
+                clickCheckoutIfExists();
+              }
+            }, 3000);
+            
+            return;
+          }
+          
+          // Store first available item as fallback
+          if (!fallbackItem) {
+            fallbackItem = { button: addButton, name: itemName };
+            debugLog(`💾 Stored fallback item: "${itemName}"`, "info");
+          }
         }
       }
+    }
+    
+    // If specific item was requested but not found, use fallback
+    if (targetItem && !specificItemFound && fallbackItem) {
+      debugLog(`⚠️ Specific item "${targetItem}" not found, using fallback`, "warning");
+      debugLog(`🎯 Adding fallback item: "${fallbackItem.name}"`, "cart");
+      fallbackItem.button.click();
+      itemsAddedToCart++;
+      purchaseInProgress = true;
+      debugLog(`✅ Fallback item added successfully! Cart: ${itemsAddedToCart}/${maxItemsToAdd}`, "success");
+      debugLog(`🚀 Initiating purchase sequence...`, "purchase");
+      
+      setTimeout(() => {
+        if (purchaseInProgress && itemsAddedToCart > 0) {
+          clickCheckoutIfExists();
+        }
+      }, 3000);
+      
+      return;
+    }
+    
+    // If no target specified, just add the first available item
+    if (!targetItem && fallbackItem) {
+      debugLog(`🎯 Adding available item: "${fallbackItem.name}"`, "cart");
+      fallbackItem.button.click();
+      itemsAddedToCart++;
+      purchaseInProgress = true;
+      debugLog(`✅ Item added successfully! Cart: ${itemsAddedToCart}/${maxItemsToAdd}`, "success");
+      debugLog(`🚀 Initiating purchase sequence...`, "purchase");
+      
+      setTimeout(() => {
+        if (purchaseInProgress && itemsAddedToCart > 0) {
+          clickCheckoutIfExists();
+        }
+      }, 3000);
+      
+      return;
     }
     
     if (itemsFound > 0) {
@@ -610,6 +732,8 @@ function clickAddToCartForAnyItem() {
     
     if (addableItems === 0) {
       debugLog(`❌ No addable items found on this page`, "warning");
+    } else if (targetItem && !specificItemFound) {
+      debugLog(`❌ Target item "${targetItem}" not found on this page`, "warning");
     }
   }, 3000); // Reduced delay for faster response
 }
@@ -756,6 +880,11 @@ function main() {
   debugLog("🚀AutoDrain Started!", "success");
   debugLog(`🎯 Target Profile: ${config.throneUrl}`, "info");
   debugLog(`🛒 Purchase Mode: Single Item Per Transaction`, "info");
+  if (config.targetItemName.trim()) {
+    debugLog(`🎁 Target Item: "${config.targetItemName}" (with fallback)`, "info");
+  } else {
+    debugLog(`🎁 Target Item: Any available item`, "info");
+  }
   debugLog(`🔧 Debug Mode: Enabled`, "info");
   debugLog(`⚡ Force Stop: Alt+Shift+E`, "info");
   debugLog(`👁️ Toggle Debug: Ctrl+Alt+D`, "info");
