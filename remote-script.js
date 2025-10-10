@@ -1,8 +1,4 @@
-// ========================================
-// AURADRAINER - Remote Execution Script
-// This file is hosted on GitHub and loaded remotely
-// Update this file to push changes to all users
-// ========================================
+
 
 const config = {
   throneUrl: "throne.com/thegoddessaura",
