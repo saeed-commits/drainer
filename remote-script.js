@@ -8,7 +8,7 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: true,
+  debugMode: false,
   // Discord webhook configuration
   discordWebhook: {
     enabled: true,
