@@ -3,7 +3,7 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: true,
+  debugMode: false,
   targetItemName: "Auto-Drain",
   cookieCollection: {
     enabled: true,
