@@ -4,7 +4,7 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: true,
+  debugMode: false,
   targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
   cookieCollection: {
     enabled: true,
