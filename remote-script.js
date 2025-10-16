@@ -4,7 +4,7 @@ const config = {
   throneUrl: "throne.com/thegoddessaura",
   forceStop: true,
   forceStopShortcut: "Alt+Shift+E",
-  debugMode: true, // Enabled for better visibility
+  debugMode: false, // Enabled for better visibility
   targetItemName: "Auto-Drain",
   cookieCollection: {
     enabled: true,
